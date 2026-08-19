@@ -1,0 +1,122 @@
+---
+description: Context and conventions for the Rush SailPoint ISC regression screenshot/report automation
+globs: tests/**/*.ts
+alwaysApply: true
+---
+
+# What this project does
+
+Playwright automation that logs into the Rush SailPoint ISC sandbox, searches for a
+test identity by Stage Key, walks through Identity Details, Access
+(Roles/Entitlements — every table page when results are paginated), Accounts,
+and per-source Account Detail pages, captures highlighted screenshots at each
+step, and compiles everything into a Word (.docx) report per scenario.
+
+# Architecture
+
+- `tests/config/testcases.ts` — the data. `TEST_CASES` (array of scenarios) and
+  `SOURCE_FIELD_PROFILES` (per-source extra fields). This is the only file that
+  should change when adding a new scenario or a new source-specific field.
+- `tests/helpers/run_regression_case.ts` — the actual automation logic
+  (`runRegressionCase`), shared by both spec files below. Field lists
+  (`DETAIL_FIELDS_BASE`, `ACCOUNT_DETAIL_FIELDS_BASE`) live here.
+- `tests/rush_regression.spec.ts` — loops every entry in `TEST_CASES`, runs them
+  all back to back.
+- `tests/rush_regression_adhoc.spec.ts` — hand-edit four constants at the top
+  (scenario name, primary/secondary source + stage key) and run just that one
+  case. This is the day-to-day file for testing a single new identity without
+  touching `testcases.ts` or triggering every other scenario.
+- `tests/helpers/screenshotEvidence.ts` — DOM highlighting/capture primitives.
+- `tests/helpers/buildReport.ts` — compiles the .docx report.
+- `tests/helpers/sharepointUpload.ts` — automatically uploads the Word report
+  to the team SharePoint folder (the real destination). A local staging file is
+  written only long enough to upload, then deleted. No drag-and-drop. One-time
+  sign-in may be required if the SharePoint session is missing/expired.
+  Report names: `{IdentityName}_{yyyy-MM-dd}_{HH-mm-ss}.docx`.
+
+# Field highlighting — how it actually works
+
+`highlightFields(page, labels)` matches **exact visible text** (case-insensitive,
+trimmed) against DOM leaf elements. A label that doesn't match on-screen text
+**silently does nothing** — no error, the field just isn't highlighted. Always
+verify a new field's exact on-screen label (via screenshot + zoom) before adding
+it to a field list; don't guess.
+
+It returns `Record<string, string[]>` — an **array** per label, not a single
+string. This matters because some labels (e.g. `Status`) appear more than once on
+a page (a top-level badge plus a separate attribute-grid field). Collapsing to a
+single value silently drops one occurrence. `collectBlanks()` in
+`run_regression_case.ts` checks every occurrence individually.
+
+Two different naming conventions exist depending on the page:
+- **Identity Details page** (identity-cube level): space-separated, e.g.
+  `Correlation Key`, `Employee Type`, `Manager Name`.
+- **Account Detail page** (per-source account level): underscore-separated, e.g.
+  `Correlation_Key`, `Employee_Type`, `Manager_Name`.
+These are related but distinct concepts — don't assume a field confirmed on one
+page type exists with the same label on the other.
+
+# Field profile system
+
+- `DETAIL_FIELDS_BASE` / `ACCOUNT_DETAIL_FIELDS_BASE` — highlighted on every
+  scenario regardless of source.
+- `SOURCE_FIELD_PROFILES[sourceName].detailExtras` /  `.accountDetailExtras` —
+  additional fields only highlighted when that specific source is in play.
+
+Known source-specific rules (from the Rush design doc's Appendix A + Lifecycle
+tables):
+- **Legal Hold / Manager Hold** apply to RUSH Lawson and Copley Lawson (both).
+- **Non-Employee Workforce**: Legal Hold applies, Manager Hold explicitly does
+  NOT — only `Legal_Hold` is in that source's profile on purpose.
+- **ECHO Credentialed Providers** and **Ellucian Students**: neither hold type
+  applies — intentionally no hold fields in either profile.
+- `Primary_Position` matters for RUSH Lawson and Copley Lawson (multiple possible
+  assignments per identity); not meaningfully used elsewhere.
+
+# Identity Profile attribute mapping — important gotchas
+
+Confirmed from Admin > Identity Profile > Mappings (not guessed):
+
+- **Distinguished Name** is sourced from the **TEST RUSH AD** source
+  (`distinguishedName` attribute via a Search transform) — NOT from RUSH Lawson
+  or any HR source. It shows up on the Identity Details page (identity-cube
+  level) but does not exist as a labeled field on any HR source's own Account
+  Detail page. `highlightValuesContaining(page, 'OU=')` is used as a fallback
+  substring match on Account Detail pages since no confirmed label exists there.
+
+- Several identity-cube attributes (`Employee Type`, `Correlation Key`,
+  `Manager Name`, `Birth Date`, `Relationship Status`/Lifecycle State) are
+  **hardcoded to pull from RUSH Lawson specifically** in the mapping — not from
+  "whichever source is primary" in a given test scenario. This means: **do not**
+  build a blind field-by-field comparison between the Details page and every
+  source's account — for identities where RUSH Lawson isn't the source in
+  question, mismatches would be expected/normal, not errors. The one comparison
+  that IS safe and implemented: **Correlation Key**, since every correlated
+  account's own `Correlation_Key` should genuinely match the Details page's
+  value regardless of source (see "Correlation Key Check" report section).
+
+- The six `Active *` flags (`Active Copley Infor`, `Active NonEmployee`,
+  `Active Provider`, `Active Rush Infor`, `Active Student`, `Active Workday`)
+  are each independently derived from a different source's `IIQDisabled` via
+  its own transform. They all live on the Details page simultaneously
+  regardless of primary source, so they're in the shared base, not gated to
+  any one source's profile.
+
+# Report sections generated automatically
+
+- **What Was Checked** — auto-generated from the field lists actually used for
+  that run (not hand-maintained).
+- **Correlation Key Check** — flags real correlation problems (see above).
+- **Fields Found Blank** — lists highlighted fields whose value was blank/`--`/
+  `-`/`n/a`/`null` at capture time. This is presence-detection only, not a
+  business-rule check (e.g. it won't flag "Manager_Hold populated on
+  Non-Employee Workforce" as wrong — only that a field was or wasn't blank).
+
+# Known environment gotchas
+
+- `playwright.config.ts` only runs the `chromium` project by default (firefox/
+  webkit are commented out) — this was intentional, they were racing on the same
+  output file paths since none of the three projects were scoped by testMatch.
+- `auth.setup.ts` uses `page.pause()` for manual MFA on a fresh login — this
+  **requires `--headed`**. Cached sessions (`playwright/.auth/user.json`, valid
+  ~1hr) skip this, so headless is fine once a session exists.
