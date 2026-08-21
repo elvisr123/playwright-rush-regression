@@ -29,7 +29,8 @@ export async function buildReport(
   checkedSummary?: string[],
   blankFieldsSummary?: string[],
   correlationMismatches?: string[],
-  valueAssertions?: string[]
+  valueAssertions?: string[],
+  databaseChecks?: string[]
 ) {
   const generatedTimestamp = new Date().toLocaleString('en-US', {
     month: 'numeric', day: 'numeric', year: 'numeric',
@@ -201,6 +202,59 @@ export async function buildReport(
         children.push(
           new Paragraph({
             text: line,
+            bullet: { level: 0 },
+            spacing: { after: 80 },
+          })
+        );
+      });
+    }
+  }
+
+  if (databaseChecks !== undefined) {
+    children.push(
+      new Paragraph({
+        text: 'Database Verification (SQL Server)',
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 300, after: 150 },
+        keepNext: true,
+      })
+    );
+    if (databaseChecks.length === 0) {
+      children.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: 'Every screen-captured field matched its value in the SOA database for each source with a confirmed staging table.',
+              italics: true,
+            }),
+          ],
+          spacing: { after: 200 },
+        })
+      );
+    } else {
+      children.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: 'Field values captured from the SailPoint UI, cross-checked against the SOA database staging tables (RUTWV-IGADB01.rushtst.com):',
+              italics: true,
+            }),
+          ],
+          spacing: { after: 150 },
+        })
+      );
+      databaseChecks.forEach((line) => {
+        const isMismatch = line.includes(': database has ') || line.includes('no row found');
+        const isError = line.includes('database check failed');
+        children.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: line,
+                bold: isMismatch || isError,
+                color: isMismatch || isError ? 'C00000' : undefined,
+              }),
+            ],
             bullet: { level: 0 },
             spacing: { after: 80 },
           })

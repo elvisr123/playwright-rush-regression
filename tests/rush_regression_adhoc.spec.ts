@@ -6,7 +6,7 @@ import { COPLEY_SOURCE } from './sources/copley-lawson/profile';
 // Other Copley lifecycles:
 //   npx playwright test tests/sources/copley-lawson/futurehire.spec.ts --headed
 //   npx playwright test tests/sources/copley-lawson --headed
-const STAGE_KEY = 'CL-95129456TESTCL560ER';
+const STAGE_KEY = 'CL-9890777461STCL000PD';
 
 test('Copley Lawson — Active (adhoc)', async ({ page }) => {
   await runSourceLifecycle(page, COPLEY_SOURCE, 'active', STAGE_KEY, {
