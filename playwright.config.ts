@@ -42,6 +42,16 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'], storageState: 'playwright/.auth/user.json' },
       dependencies: ['setup'],
+      // SQL/SSMS scripts under tests/sql/ have their own project below —
+      // excluded here so they don't also trigger an unneeded IdentityNow login.
+      testIgnore: /tests\/sql\//,
+    },
+
+    /* SQL/SSMS verification scripts — no browser, no IdentityNow login, so
+       deliberately no dependency on the 'setup' project. */
+    {
+      name: 'sql-tools',
+      testMatch: /tests\/sql\//,
     },
 
     /* Only chromium is used for the Rush automation — SailPoint testing doesn't
