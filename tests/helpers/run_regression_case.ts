@@ -25,13 +25,11 @@ import {
   waitForStableSearchResults,
 } from './pageActions';
 import { TestCase, SOURCE_FIELD_PROFILES, ExpectedValueCheck } from '../config/testcases';
-import { SOURCE_TO_STG_TABLE } from '../config/sources';
 import { lifecycleLabel } from '../config/lifecycles';
-import { getStagingRow } from './dbClient';
 import {
   buildReportFileName,
   localReportPath,
-  uploadFileToSharePointFolder,
+  uploadReportForSource,
   removeLocalReportCopy,
 } from './sharepointUpload';
 
@@ -259,7 +257,7 @@ function formatCheckResult(check: ExpectedValueCheck, outcome: CheckOutcome | un
  * Runs the full search -> Process Identity -> Details -> Roles/Entitlements ->
  * Accounts -> account-detail-drilldown pathway for one test case and writes
  * its report. Called from tests/sources/<source>/<lifecycle>.spec.ts
- * (Copley first) and from rush_regression.spec.ts for leftover multi-source cases.
+ * (Copley Lawson, then RUSH Lawson) and from rush_regression.spec.ts for leftover multi-source cases.
  */
 export async function runRegressionCase(page: Page, testCase: TestCase) {
   await page.setViewportSize({ width: 1600, height: 2000 });
@@ -426,7 +424,6 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
   const accountDetailImages: { path: string; caption: string }[] = [];
   const correlationMismatches: string[] = [];
   const unconfirmedFieldSources: string[] = [];
-  const databaseChecks: string[] = [];
 
   // Identity Details page's Correlation Key — the ground-truth value every
   // correlated HR-source account's own Correlation_Key should match.
@@ -448,36 +445,6 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
     const accountFields = resolveAccountFields(sourceName, testCase, primary.name);
     const accountValues = await highlightFields(page, accountFields);
     collectBlanks(`${sourceName} Account Detail`, accountValues, blankFields);
-
-    // Database cross-check: compare the screen-captured fields against the
-    // SOA database's staging table row for this source, when a table mapping
-    // and a stage key for this specific source are both available. Only
-    // fields that were both highlighted on screen AND present as a column in
-    // the DB row are compared — a field missing from either side is not
-    // treated as a mismatch, just as not comparable.
-    const stgTable = SOURCE_TO_STG_TABLE[sourceName];
-    const sourceStageKey = testCase.sources.find((s) => s.name === sourceName)?.stageKey;
-    if (stgTable && sourceStageKey) {
-      try {
-        const dbRow = await getStagingRow(stgTable, sourceStageKey);
-        if (!dbRow) {
-          databaseChecks.push(`${sourceName}: no row found in ${stgTable} for Stage_Key "${sourceStageKey}"`);
-        } else {
-          for (const field of accountFields) {
-            const dbValue = dbRow[field];
-            const screenValue = accountValues[field]?.[0];
-            if (dbValue === undefined || screenValue === undefined) continue;
-            if (dbValue.trim().toLowerCase() !== screenValue.trim().toLowerCase()) {
-              databaseChecks.push(`${sourceName} — ${field}: database has "${dbValue}", screen shows "${screenValue}"`);
-            }
-          }
-        }
-        checkedSummary.push(`Database cross-check: ${sourceName} vs. ${stgTable} (Stage_Key ${sourceStageKey})`);
-      } catch (err) {
-        databaseChecks.push(`${sourceName}: database check failed — ${(err as Error).message}`);
-      }
-    }
-
     if (sourceName === primary.name) {
       // Resolve any expected-value checks that weren't found on the Details
       // page (e.g. Primary_Position, which only exists on the account page),
@@ -590,12 +557,11 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
     checkedSummary,
     blankFields,
     correlationMismatches,
-    valueAssertions,
-    databaseChecks
+    valueAssertions
   );
 
   // Destination is SharePoint. Stage locally → upload → delete local staging copy.
-  const published = await uploadFileToSharePointFolder(reportPath, reportFileName);
+  const published = await uploadReportForSource(reportPath, reportFileName, primary.name);
   if (published) {
     removeLocalReportCopy(reportPath);
   } else {

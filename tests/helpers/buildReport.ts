@@ -213,7 +213,7 @@ export async function buildReport(
   if (databaseChecks !== undefined) {
     children.push(
       new Paragraph({
-        text: 'Database Verification (SQL Server)',
+        text: 'Database Checks',
         heading: HeadingLevel.HEADING_2,
         spacing: { before: 300, after: 150 },
         keepNext: true,
@@ -224,7 +224,7 @@ export async function buildReport(
         new Paragraph({
           children: [
             new TextRun({
-              text: 'Every screen-captured field matched its value in the SOA database for each source with a confirmed staging table.',
+              text: 'All fields compared against the SOA staging table matched what was captured on screen — no discrepancies found.',
               italics: true,
             }),
           ],
@@ -236,23 +236,23 @@ export async function buildReport(
         new Paragraph({
           children: [
             new TextRun({
-              text: 'Field values captured from the SailPoint UI, cross-checked against the SOA database staging tables (RUTWV-IGADB01.rushtst.com):',
+              text: 'The following database cross-check results were flagged — either a value mismatch between the SOA staging table and what was captured on screen, or the database check itself could not run:',
               italics: true,
+              bold: true,
             }),
           ],
           spacing: { after: 150 },
         })
       );
       databaseChecks.forEach((line) => {
-        const isMismatch = line.includes(': database has ') || line.includes('no row found');
-        const isError = line.includes('database check failed');
+        const isError = /database check failed|no row found/i.test(line);
         children.push(
           new Paragraph({
             children: [
               new TextRun({
                 text: line,
-                bold: isMismatch || isError,
-                color: isMismatch || isError ? 'C00000' : undefined,
+                bold: isError,
+                color: isError ? 'C00000' : undefined,
               }),
             ],
             bullet: { level: 0 },

@@ -150,11 +150,25 @@ export async function getContentBottom(page: Page): Promise<number> {
 }
 
 export async function screenshotContent(page: Page, path: string) {
+  const original = page.viewportSize() ?? { width: 1600, height: 2000 };
   const contentHeight = await getContentBottom(page);
+  // Playwright's clip screenshot is bounded by the actual browser viewport —
+  // requesting a taller clip than the viewport silently truncates the image
+  // (seen on pages with long attribute lists, e.g. AD accounts, where content
+  // runs well past the default 2000px viewport). Grow the viewport to fit
+  // before capturing, then restore it so later steps aren't affected.
+  const targetHeight = Math.min(Math.max(contentHeight, original.height), 15000);
+  const needsResize = targetHeight > original.height;
+  if (needsResize) {
+    await page.setViewportSize({ width: original.width, height: targetHeight });
+  }
   await page.screenshot({
     path,
-    clip: { x: 0, y: 0, width: 1600, height: Math.min(contentHeight, 5000) },
+    clip: { x: 0, y: 0, width: original.width, height: targetHeight },
   });
+  if (needsResize) {
+    await page.setViewportSize(original);
+  }
 }
 
 async function highlightVisible(locator: Locator) {

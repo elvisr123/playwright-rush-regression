@@ -1,7 +1,7 @@
 import { LifecycleState } from './lifecycles';
 
 // Per-source, per-lifecycle cases live under tests/sources/<source>/<lifecycle>.spec.ts
-// (Copley is first). SOURCE_FIELD_PROFILES below are source-wide extras applied
+// (Copley Lawson, then RUSH Lawson). SOURCE_FIELD_PROFILES below are source-wide extras applied
 // on every lifecycle; put lifecycle-only highlights on the spec's detailExtras /
 // accountDetailExtras instead.
 //

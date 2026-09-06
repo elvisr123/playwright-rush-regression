@@ -5,7 +5,7 @@ import { COPLEY_SOURCE } from './profile';
 // Copley Lawson — Futurehire
 // Field list from Copley_Futurehire.docx. Paste a Stage Key, then:
 //   npx playwright test tests/sources/copley-lawson/futurehire.spec.ts --headed
-const STAGE_KEY = 'CL-098482TESTCL000AP';
+const STAGE_KEY = 'CL-98713241TESTCL000PD';
 
 const FUTUREHIRE_DETAIL_FIELDS = [
   'Email Address',
