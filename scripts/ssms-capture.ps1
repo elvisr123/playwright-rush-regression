@@ -2,7 +2,7 @@
 # query tab on the existing connection, types the given query, executes it,
 # and screenshots the SSMS window. Windows-only (SSMS itself is Windows-only).
 #
-# Deliberately does NOT launch or log into SSMS — it expects a window titled
+# Deliberately does NOT launch or log into SSMS - it expects a window titled
 # "...Microsoft SQL Server Management Studio" to already be open and
 # connected (the common case: VDI sessions persist SSMS across reconnects).
 # If none is found, it fails fast with a clear message instead of guessing.
@@ -45,7 +45,7 @@ $SW_RESTORE = 9
 $SW_MAXIMIZE = 3
 
 function Escape-SendKeys([string]$text) {
-    # SendKeys treats these as control characters — wrap each in braces so
+    # SendKeys treats these as control characters - wrap each in braces so
     # it's typed literally instead of interpreted.
     $specials = @('+', '^', '%', '~', '(', ')', '{', '}', '[', ']')
     foreach ($ch in $specials) {
@@ -73,7 +73,7 @@ Start-Sleep -Milliseconds 500
 [SsmsCaptureWin32]::SetForegroundWindow($hwnd) | Out-Null
 Start-Sleep -Milliseconds 500
 
-# New query tab on the SAME connection — no re-login needed.
+# New query tab on the SAME connection - no re-login needed.
 Write-Output "Opening a new query tab..."
 [System.Windows.Forms.SendKeys]::SendWait("^n")
 Start-Sleep -Milliseconds 1000
@@ -100,7 +100,7 @@ $width = $rect.Right - $rect.Left
 $height = $rect.Bottom - $rect.Top
 
 if ($width -le 0 -or $height -le 0) {
-    Write-Error "Could not read a valid SSMS window size — is the window minimized?"
+    Write-Error "Could not read a valid SSMS window size - is the window minimized?"
     exit 1
 }
 
