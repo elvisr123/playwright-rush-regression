@@ -48,7 +48,7 @@ This took several iterations to get right — the failure modes were non-obvious
   screenshot looks cropped, check this function first, not the highlighting
   logic.
 
-## SQL Server verification (in progress)
+## SQL Server verification
 
 The RUSH SQL Server (`RUTWV-IGADB01.rushtst.com`) is **only reachable from
 inside a VDI** — no direct network path from a normal dev machine (confirmed:
@@ -61,10 +61,21 @@ current preference:
    signed-in** SSMS window: opens a new query tab on the existing connection
    (`Ctrl+N`, so no re-login), types the query via SendKeys, executes (F5),
    and screenshots the maximized window. Deliberately does not attempt to
-   launch or log into SSMS itself. This is genuine desktop UI automation
-   (window matching, focus, timing) — expect it to need tuning once actually
-   run against a live SSMS session; it hasn't been verified end-to-end yet
-   since it can only run inside the VDI.
+   launch or log into SSMS itself. **Verified end-to-end in the VDI
+   (2026-09-08)** — `npx playwright test --project=sql-tools` passes and
+   produces a real screenshot. Two gotchas hit and fixed along the way:
+   - The query is passed via a `-QueryFile` (written to a temp `.sql` file),
+     not a `-Query` string argument — `powershell.exe -File` re-tokenizes the
+     trailing argument list with PowerShell's own quoting/statement-separator
+     rules, so a raw SQL string with single quotes/semicolons/brackets can get
+     mangled even when Node passes it as one correctly-escaped argv entry.
+   - `ssms-capture.ps1` must stay pure ASCII. Windows PowerShell 5.1
+     (`powershell.exe`, not `pwsh`) reads `.ps1` files without a UTF-8 BOM
+     using the system ANSI codepage, not UTF-8 — a stray em dash (`—`) inside
+     a string literal threw off the parser's quote/brace tracking for the
+     rest of the file (`"string missing terminator"` / `"missing closing
+     '}'"` errors near EOF). Don't reintroduce non-ASCII characters in this
+     file.
 2. **`tests/helpers/dbClient.ts`** — a direct `mssql` connection
    (`getStagingRow`), scoped to an allowlist of known `STG_*` tables by
    design (safety guard against interpolating an arbitrary table name into a
