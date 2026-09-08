@@ -54,6 +54,34 @@ npx playwright test tests/rush_regression_adhoc.spec.ts
 
 Only the `chromium` project runs by default — see `playwright.config.ts`.
 
+## SQL Server verification (VDI only)
+
+`tests/sql/ssms-my-rush-jobs.spec.ts` + `scripts/ssms-capture.ps1` screenshot a live
+query against `[SOA].[dbo].[My_Rush_Jobs]` on the RUSH SQL Server. This only works
+**inside the VDI** — the server isn't reachable from a normal dev machine, and SSMS
+itself is Windows-only. It runs under its own `sql-tools` Playwright project (no
+browser, no IdentityNow login):
+
+```bash
+npx playwright test --project=sql-tools
+```
+
+Prerequisites:
+- Running from inside the VDI, on Windows.
+- SSMS already open and **connected** to `RUTWV-IGADB01.rushtst.com` — the script
+  deliberately does not launch or log into SSMS itself; it fails fast if no
+  connected SSMS window is found.
+
+Override the target row or query without editing the file:
+
+```bash
+$env:STAGE_KEY="CL-26082137TESTCL000AA"; npx playwright test --project=sql-tools
+# or a fully custom query:
+$env:SQL_QUERY="SELECT * FROM [SOA].[dbo].[My_Rush_Jobs] WHERE Status = 'Enabled';"; npx playwright test --project=sql-tools
+```
+
+Output: `temp/My_Rush_Jobs_<STAGE_KEY>_<timestamp>.png`.
+
 ## Project structure
 
 - `tests/config/testcases.ts` — the data: `TEST_CASES` (scenarios) and
@@ -66,8 +94,11 @@ Only the `chromium` project runs by default — see `playwright.config.ts`.
 - `tests/helpers/sharepointUpload.ts` — uploads the finished report to the team
   SharePoint folder (`{IdentityName}_{yyyy-MM-dd}_{HH-mm-ss}.docx`); a local staging
   copy is written only long enough to upload, then deleted.
-- `tests/sources/copley-lawson/` — per-lifecycle-state spec files (active, inactive,
-  prehire, futurehire, rehire, termed) for the Copley Lawson source.
+- `tests/sources/copley-lawson/`, `tests/sources/nerm/`, `tests/sources/rush-lawson/`
+  — per-lifecycle-state spec files (active, inactive, prehire, futurehire, rehire,
+  termed) for each source.
+- `tests/sql/ssms-my-rush-jobs.spec.ts` + `scripts/ssms-capture.ps1` — SSMS
+  screenshot verification against the RUSH SQL Server (VDI-only, see above).
 
 See `.cursor/rules/rush-automation-context.mdc` for detailed conventions around field
 highlighting, source-specific field profiles, and known identity attribute mapping
