@@ -24,7 +24,8 @@ import {
   waitForLoadingToFinish,
   waitForStableSearchResults,
 } from './pageActions';
-import { TestCase, SOURCE_FIELD_PROFILES, ExpectedValueCheck } from '../config/testcases';
+import { TestCase, SOURCE_FIELD_PROFILES } from '../config/testcases';
+import { evaluateCheck, formatCheckResult } from './expectedValueCheck';
 import { lifecycleLabel } from '../config/lifecycles';
 import {
   buildReportFileName,
@@ -223,34 +224,6 @@ function collectBlanks(context: string, values: Record<string, string[]> | void,
       }
     });
   }
-}
-
-// Evaluates a single expected-value check against one page's captured
-// values. Returns undefined if the field wasn't found on this particular
-// page (the caller tries the other page, or reports NOT FOUND if neither has it).
-type CheckOutcome = { result: 'PASS' | 'FAIL'; actual: string[] };
-
-function evaluateCheck(check: ExpectedValueCheck, values: Record<string, string[]> | void): CheckOutcome | undefined {
-  const occurrences = values?.[check.field];
-  if (!occurrences || occurrences.length === 0) return undefined;
-  const matchType = check.matchType ?? 'exact';
-  const matched = occurrences.some((actual) => {
-    const a = actual.trim().toLowerCase();
-    const e = check.expected.trim().toLowerCase();
-    return matchType === 'contains' ? a.includes(e) : a === e;
-  });
-  return { result: matched ? 'PASS' : 'FAIL', actual: occurrences };
-}
-
-function formatCheckResult(check: ExpectedValueCheck, outcome: CheckOutcome | undefined): string {
-  if (!outcome) {
-    return `NOT FOUND — ${check.field}: expected "${check.expected}", but this field wasn't matched on the page`;
-  }
-  if (outcome.result === 'PASS') {
-    return `PASS — ${check.field}: "${outcome.actual[0]}"`;
-  }
-  const matchType = check.matchType ?? 'exact';
-  return `FAIL — ${check.field}: expected ${matchType === 'contains' ? 'to contain ' : ''}"${check.expected}", found "${outcome.actual.join('" / "')}"`;
 }
 
 /**

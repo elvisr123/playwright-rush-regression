@@ -27,6 +27,7 @@ const KNOWN_TABLES = new Set([
   'STG_Ellucian',
   'STG_Rush_Workday',
   'STG_Rise',
+  'My_Rush_Jobs',
 ]);
 
 /**

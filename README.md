@@ -82,6 +82,35 @@ $env:SQL_QUERY="SELECT * FROM [SOA].[dbo].[My_Rush_Jobs] WHERE Status = 'Enabled
 
 Output: `temp/My_Rush_Jobs_<STAGE_KEY>_<timestamp>.png`.
 
+### Confirming attribute values, not just a screenshot
+
+The screenshot above is visual evidence only — it can't be asserted against in
+code. To actually confirm specific column values (the same `field` /
+`expected` / `matchType` pattern used in `tests/sources/*/*.spec.ts`), add
+`DB_SERVER` / `DB_DATABASE` / `DB_USERNAME` / `DB_PASSWORD` to `.env` (also VDI-only —
+same server) and hand-edit `EXPECTED_VALUES` at the top of
+`ssms-my-rush-jobs.spec.ts`:
+
+```
+DB_SERVER=RUTWV-IGADB01.rushtst.com
+DB_DATABASE=SOA
+DB_USERNAME=
+DB_PASSWORD=
+```
+
+```ts
+const EXPECTED_VALUES: ExpectedValueCheck[] = [
+  { field: 'Source_Name', expected: 'Non-Employee Workforce' },
+  { field: 'Status', expected: 'Enabled' },
+];
+```
+
+This runs as a second test in the same file (`DB — verify My_Rush_Jobs
+attributes`), connecting directly via `mssql` (`tests/helpers/dbClient.ts`)
+rather than going through SSMS — it fails the test and prints a `PASS` /
+`FAIL` / `NOT FOUND` line per field if anything doesn't match. Leave
+`EXPECTED_VALUES` empty to skip this check and only capture the screenshot.
+
 ## Project structure
 
 - `tests/config/testcases.ts` — the data: `TEST_CASES` (scenarios) and
