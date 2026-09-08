@@ -9,14 +9,23 @@
 #
 # Usage:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File ssms-capture.ps1 `
-#     -Query "SELECT * FROM [SOA].[dbo].[My_Rush_Jobs] WHERE Stage_Key = 'NE-19825552TEST000PDPPL';" `
+#     -QueryFile "temp\query.sql" `
 #     -OutputPath "temp\My_Rush_Jobs.png"
+#
+# The query is read from a file rather than accepted as a -Query string
+# argument: powershell.exe's -File mode re-tokenizes the trailing argument
+# list with PowerShell's own quoting/statement-separator rules, so a SQL
+# query containing single quotes, a semicolon, or brackets gets mangled
+# (the semicolon reads as a new statement) even when the caller passes it
+# as one correctly-escaped argv entry.
 
 param(
-    [Parameter(Mandatory = $true)][string]$Query,
+    [Parameter(Mandatory = $true)][string]$QueryFile,
     [Parameter(Mandatory = $true)][string]$OutputPath,
     [int]$WaitSeconds = 4
 )
+
+$Query = Get-Content -Raw -Path $QueryFile
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
