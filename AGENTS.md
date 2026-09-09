@@ -77,13 +77,37 @@ current preference:
      '}'"` errors near EOF). Don't reintroduce non-ASCII characters in this
      file.
 2. **`tests/helpers/dbClient.ts`** — a direct `mssql` connection
-   (`getStagingRow`), scoped to an allowlist of known `STG_*` tables by
-   design (safety guard against interpolating an arbitrary table name into a
-   query). Not yet extended to cover `My_Rush_Jobs` or wired into any test.
-   Planned fallback if the SSMS screenshot approach proves too fragile: fetch
-   the row via `mssql`, render it as an HTML table, screenshot *that* with
-   Playwright (reuses the existing evidence-screenshot pattern instead of
-   fighting native window automation).
+   (`getStagingRow`), scoped to an allowlist of known tables (`STG_*` plus
+   `My_Rush_Jobs`) by design (safety guard against interpolating an arbitrary
+   table name into a query). **Wired into two places (2026-09-08), both
+   verified working from the VDI:**
+   - `tests/sql/ssms-my-rush-jobs.spec.ts`'s second test
+     (`DB — verify My_Rush_Jobs attributes`) — hand-edited `EXPECTED_VALUES`
+     checked against a live row, using the shared `evaluateCheck`/
+     `formatCheckResult` logic in `tests/helpers/expectedValueCheck.ts`
+     (extracted out of `run_regression_case.ts` so both this and the
+     UI-based `expectedValues` checks share identical match semantics).
+   - The main regression report itself: `run_regression_case.ts` now cross-
+     checks each known-HR source's own Account Detail page against its own
+     row in `My_Rush_Jobs` (by that source's Stage_Key), populating
+     `buildReport.ts`'s pre-existing-but-previously-unused `databaseChecks`
+     parameter/"Database Checks" section. Only fields that exist as an
+     exact-name column on the DB row are compared (Account Detail labels are
+     already underscore-cased to match `My_Rush_Jobs` columns), and it's
+     gated entirely on `isDbConfigured()` — with no `DB_*` vars in `.env`
+     (the normal case outside the VDI) this adds nothing and the report
+     section doesn't render at all, so it can't break a normal Mac-side run.
+     Deliberately does **not** cross-check the Identity Details page: several
+     of its fields (`Employee Type`, `Correlation Key`, `Manager Name`,
+     `Birth Date`, `Relationship Status`) are hardcoded in the Identity
+     Profile mapping to pull from RUSH Lawson specifically regardless of
+     which source is primary (see
+     `.cursor/rules/rush-automation-context.mdc`), so comparing them against
+     a non-RUSH-Lawson source's own DB row would flag expected differences as
+     false mismatches. Date-valued fields (e.g. `Birth_Date`) get a
+     best-effort date-aware comparison (`valuesRoughlyMatch`) before falling
+     back to string equality, since the UI and the DB often render the same
+     date in different formats.
 
 ## Project layout notes
 

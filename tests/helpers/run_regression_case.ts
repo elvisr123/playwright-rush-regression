@@ -26,6 +26,7 @@ import {
 } from './pageActions';
 import { TestCase, SOURCE_FIELD_PROFILES } from '../config/testcases';
 import { evaluateCheck, formatCheckResult } from './expectedValueCheck';
+import { getStagingRow, isDbConfigured } from './dbClient';
 import { lifecycleLabel } from '../config/lifecycles';
 import {
   buildReportFileName,
@@ -226,6 +227,44 @@ function collectBlanks(context: string, values: Record<string, string[]> | void,
   }
 }
 
+// Best-effort equality for the DB cross-check below: exact match first, then
+// falls back to comparing as dates — the UI and the My_Rush_Jobs staging
+// table often render the same date differently (e.g. "05/10/1998" on screen
+// vs "1998-05-10" in the DB), which would otherwise flag as a false mismatch
+// on every single date field, every run.
+function valuesRoughlyMatch(uiValue: string, dbValue: string): boolean {
+  const a = uiValue.trim().toLowerCase();
+  const b = dbValue.trim().toLowerCase();
+  if (a === b) return true;
+  const dateA = new Date(uiValue);
+  const dateB = new Date(dbValue);
+  return !isNaN(dateA.getTime()) && !isNaN(dateB.getTime()) && dateA.getTime() === dateB.getTime();
+}
+
+// Cross-checks one source's Account Detail page against its own row in the
+// My_Rush_Jobs staging table (by that source's Stage_Key) — safe to compare
+// directly because both sides describe the SAME source's own account, unlike
+// the Identity Details page (see the Correlation Key comment below), which
+// pulls several fields from RUSH Lawson specifically regardless of which
+// source is primary. Only fields that exist as an exact-name column on the DB
+// row are compared (Account Detail field labels are already underscore-cased
+// to match My_Rush_Jobs column names) — this also naturally skips UI-only
+// fields like "Identity" or "Source Name" that have no DB equivalent. Returns
+// only mismatch lines; a clean comparison contributes nothing.
+function compareAccountToDbRow(sourceName: string, accountValues: Record<string, string[]>, dbRow: Record<string, string>): string[] {
+  const mismatches: string[] = [];
+  for (const [field, occurrences] of Object.entries(accountValues)) {
+    if (!(field in dbRow)) continue;
+    const uiValue = occurrences[0];
+    const dbValue = dbRow[field];
+    if (isBlank(uiValue) || isBlank(dbValue)) continue;
+    if (!valuesRoughlyMatch(uiValue, dbValue)) {
+      mismatches.push(`${sourceName}: ${field} — on-screen "${uiValue}" vs. My_Rush_Jobs "${dbValue}"`);
+    }
+  }
+  return mismatches;
+}
+
 /**
  * Runs the full search -> Process Identity -> Details -> Roles/Entitlements ->
  * Accounts -> account-detail-drilldown pathway for one test case and writes
@@ -238,6 +277,13 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
   const primary = testCase.sources[0];
   const allSourceNames = testCase.sources.map((s) => s.name);
   const label = testCase.scenarioName;
+  // Only Stage_Keys we actually configured are known — accounts discovered
+  // beyond testCase.sources (ServiceNow SaaS, TEST RUSH AD, etc.) have no
+  // Stage_Key to look up in My_Rush_Jobs and are skipped by the DB check.
+  const stageKeyBySource = new Map(testCase.sources.map((s) => [s.name, s.stageKey]));
+  const dbCheckEnabled = isDbConfigured();
+  const databaseChecks: string[] = [];
+  const dbCheckedSources: string[] = [];
 
   await page.goto('https://rush-sb.identitynow.com/ui/d/mysailpoint');
   await page.getByRole('link', { name: 'Admin' }).click();
@@ -418,6 +464,20 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
     const accountFields = resolveAccountFields(sourceName, testCase, primary.name);
     const accountValues = await highlightFields(page, accountFields);
     collectBlanks(`${sourceName} Account Detail`, accountValues, blankFields);
+    if (isKnownHrSource && dbCheckEnabled && stageKeyBySource.has(sourceName)) {
+      const stageKey = stageKeyBySource.get(sourceName)!;
+      dbCheckedSources.push(sourceName);
+      try {
+        const dbRow = await getStagingRow('My_Rush_Jobs', stageKey);
+        if (!dbRow) {
+          databaseChecks.push(`${sourceName}: no row found in My_Rush_Jobs for Stage_Key "${stageKey}"`);
+        } else {
+          databaseChecks.push(...compareAccountToDbRow(sourceName, accountValues, dbRow));
+        }
+      } catch (err) {
+        databaseChecks.push(`${sourceName}: database check failed — ${(err as Error).message}`);
+      }
+    }
     if (sourceName === primary.name) {
       // Resolve any expected-value checks that weren't found on the Details
       // page (e.g. Primary_Position, which only exists on the account page),
@@ -516,6 +576,10 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
     checkedSummary.push(`Expected value assertions: ${testCase.expectedValues!.map((c) => c.field).join(', ')}`);
   }
 
+  if (dbCheckedSources.length > 0) {
+    checkedSummary.push(`Database cross-check: My_Rush_Jobs staging table vs. Account Detail (${dbCheckedSources.join(', ')})`);
+  }
+
   const reportFileName = buildReportFileName(identityName);
   const reportPath = localReportPath(reportFileName);
 
@@ -530,7 +594,8 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
     checkedSummary,
     blankFields,
     correlationMismatches,
-    valueAssertions
+    valueAssertions,
+    dbCheckEnabled ? databaseChecks : undefined
   );
 
   // Destination is SharePoint. Stage locally → upload → delete local staging copy.

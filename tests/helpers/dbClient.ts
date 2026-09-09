@@ -1,5 +1,14 @@
 import sql from 'mssql';
 
+// Non-throwing check for callers that need to decide whether to attempt a DB
+// check at all (e.g. the main regression suite, which normally runs outside
+// the VDI where these vars are never set — the DB cross-check should silently
+// not run there rather than fail every scenario on a missing-config error).
+export function isDbConfigured(): boolean {
+  const { DB_SERVER, DB_DATABASE, DB_USERNAME, DB_PASSWORD } = process.env;
+  return Boolean(DB_SERVER && DB_DATABASE && DB_USERNAME && DB_PASSWORD);
+}
+
 function config(): sql.config {
   const { DB_SERVER, DB_DATABASE, DB_USERNAME, DB_PASSWORD } = process.env;
   if (!DB_SERVER || !DB_DATABASE || !DB_USERNAME || !DB_PASSWORD) {

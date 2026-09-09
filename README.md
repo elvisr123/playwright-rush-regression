@@ -23,6 +23,8 @@ SHAREPOINT_UPLOAD=
 SHAREPOINT_FOLDER_URL=
 ```
 
+
+
 ## Authentication
 
 `tests/auth.setup.ts` logs into SailPoint ISC and caches the session to
@@ -67,10 +69,11 @@ npx playwright test --project=sql-tools
 ```
 
 Prerequisites:
+
 - Running from inside the VDI, on Windows.
 - SSMS already open and **connected** to `RUTWV-IGADB01.rushtst.com` — the script
-  deliberately does not launch or log into SSMS itself; it fails fast if no
-  connected SSMS window is found.
+deliberately does not launch or log into SSMS itself; it fails fast if no
+connected SSMS window is found.
 
 Override the target row or query without editing the file:
 
@@ -105,29 +108,41 @@ const EXPECTED_VALUES: ExpectedValueCheck[] = [
 ];
 ```
 
-This runs as a second test in the same file (`DB — verify My_Rush_Jobs
-attributes`), connecting directly via `mssql` (`tests/helpers/dbClient.ts`)
+This runs as a second test in the same file (`DB — verify My_Rush_Jobs attributes`), connecting directly via `mssql` (`tests/helpers/dbClient.ts`)
 rather than going through SSMS — it fails the test and prints a `PASS` /
 `FAIL` / `NOT FOUND` line per field if anything doesn't match. Leave
 `EXPECTED_VALUES` empty to skip this check and only capture the screenshot.
 
+### Database Checks in the main regression report
+
+Once `DB_SERVER` / `DB_DATABASE` / `DB_USERNAME` / `DB_PASSWORD` are set in `.env`
+(VDI-only), the main regression suite (`tests/rush_regression.spec.ts`,
+`tests/sources/**/*.spec.ts`) automatically cross-checks each known HR
+source's own Account Detail page against its own row in `My_Rush_Jobs`, and
+adds a **Database Checks** section to the `.docx` report listing any
+mismatches (or "no discrepancies found" if everything matched). With no
+`DB_*` vars set — the normal case running outside the VDI — this adds
+nothing and the section doesn't appear at all. See `AGENTS.md` for how this
+avoids false positives from fields the Identity Profile mapping hardcodes to
+RUSH Lawson.
+
 ## Project structure
 
 - `tests/config/testcases.ts` — the data: `TEST_CASES` (scenarios) and
-  `SOURCE_FIELD_PROFILES` (per-source extra fields). The file to edit when adding a
-  new scenario or source-specific field.
+`SOURCE_FIELD_PROFILES` (per-source extra fields). The file to edit when adding a
+new scenario or source-specific field.
 - `tests/helpers/run_regression_case.ts` — the core automation logic
-  (`runRegressionCase`), shared by the full-suite and ad-hoc spec files.
+(`runRegressionCase`), shared by the full-suite and ad-hoc spec files.
 - `tests/helpers/screenshotEvidence.ts` — DOM highlighting/capture primitives.
 - `tests/helpers/buildReport.ts` — compiles the `.docx` report.
 - `tests/helpers/sharepointUpload.ts` — uploads the finished report to the team
-  SharePoint folder (`{IdentityName}_{yyyy-MM-dd}_{HH-mm-ss}.docx`); a local staging
-  copy is written only long enough to upload, then deleted.
+SharePoint folder (`{IdentityName}_{yyyy-MM-dd}_{HH-mm-ss}.docx`); a local staging
+copy is written only long enough to upload, then deleted.
 - `tests/sources/copley-lawson/`, `tests/sources/nerm/`, `tests/sources/rush-lawson/`
-  — per-lifecycle-state spec files (active, inactive, prehire, futurehire, rehire,
-  termed) for each source.
+— per-lifecycle-state spec files (active, inactive, prehire, futurehire, rehire,
+termed) for each source.
 - `tests/sql/ssms-my-rush-jobs.spec.ts` + `scripts/ssms-capture.ps1` — SSMS
-  screenshot verification against the RUSH SQL Server (VDI-only, see above).
+screenshot verification against the RUSH SQL Server (VDI-only, see above).
 
 See `.cursor/rules/rush-automation-context.mdc` for detailed conventions around field
 highlighting, source-specific field profiles, and known identity attribute mapping
@@ -138,3 +153,4 @@ gotchas — read it before adding new fields or sources.
 - `output/` — generated reports and working artifacts (gitignored)
 - `test-results/`, `playwright-report/` — Playwright's own run artifacts (gitignored)
 - `temp/` — staging files created/deleted during a run (gitignored)
+
