@@ -30,6 +30,15 @@ export default defineConfig({
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
+
+    /* Without this, a stuck action (e.g. clicking an element that never
+       becomes actionable) has NO timeout of its own — it silently waits
+       until the whole test's timeout fires (600s in runSourceLifecycle.ts),
+       producing minutes of dead silence instead of a fast, diagnostic
+       error. Hit this for real: a click on a marked account-row link in
+       run_regression_case.ts hung 8+ minutes with zero output before being
+       manually interrupted. */
+    actionTimeout: 15_000,
   },
 
   /* Configure projects for major browsers */
