@@ -26,8 +26,8 @@ const QUERY =
 // labels used elsewhere. Leave empty to skip this check and only capture the
 // SSMS screenshot.
 const EXPECTED_VALUES: ExpectedValueCheck[] = [
-  // { field: 'Source_Name', expected: 'Non-Employee Workforce' },
-  // { field: 'Status', expected: 'Enabled' },
+  { field: 'Source_Name', expected: 'Non-Employee Workforce' },
+  { field: 'User_ID', expected: '19825552' },
 ];
 
 test('SSMS — screenshot My_Rush_Jobs record', async () => {
