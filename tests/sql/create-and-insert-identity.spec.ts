@@ -39,7 +39,13 @@ function runSsmsCapture(query: string, outDir: string, stageKey: string, suffix:
     execFileSync(
       'powershell.exe',
       ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', psScript, '-QueryFile', queryPath, '-OutputPath', outPath],
-      { stdio: 'inherit', timeout: 60_000 }
+      // A full My_Rush_Jobs INSERT is ~2000+ escaped characters, and
+      // SendKeys types character-by-character — confirmed via a live run
+      // that 60s isn't enough (it was still typing, past character 1500,
+      // when the process got killed). The SELECT verification query is
+      // short and finishes in seconds either way, so one generous timeout
+      // covers both without needing to special-case query length.
+      { stdio: 'inherit', timeout: 180_000 }
     );
   } finally {
     fs.rmSync(queryPath, { force: true });
@@ -52,6 +58,10 @@ function runSsmsCapture(query: string, outDir: string, stageKey: string, suffix:
 
 test('Create identity — INSERT + verify via SSMS', async () => {
   test.skip(process.platform !== 'win32', 'SSMS automation only runs on Windows — run this from inside the VDI.');
+  // Default Playwright test timeout is 30s — nowhere near enough for a
+  // multi-minute SendKeys typing session per row (see runSsmsCapture's own
+  // 180s timeout, which can run twice per row: INSERT + verification SELECT).
+  test.setTimeout(300_000);
 
   const outDir = path.resolve('temp');
   fs.mkdirSync(outDir, { recursive: true });
