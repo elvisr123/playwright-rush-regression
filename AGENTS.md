@@ -89,6 +89,19 @@ current preference:
      SendKeys choked partway through and SSMS ended up with only
      `INSERT INTO [SOA].[dbo].[My_Rush_Jobs] ` typed — cut off at exactly the
      first `(`, matching the corruption's onset. Fixed order: `{}+^%~()[]`.
+   - Once typing itself worked (raised `create-and-insert-identity.spec.ts`'s
+     timeouts — SendKeys typing a ~2000+ char INSERT needs well over 60s),
+     the fully-typed INSERT still failed: `Msg 102 ... Incorrect syntax near
+     '<Stage_Key value>'`. Cause: `identity-factory/local_table.py`'s
+     `to_insert_sql()` annotated each value with a `-- ColumnName` **line**
+     comment, relying on the newline after it to end the comment. But
+     `ssms-capture.ps1` flattens all whitespace (including newlines) to
+     single spaces before typing — so once flattened, the *first* `--`
+     comment has no newline left to stop at and swallows everything after
+     it, including the closing `)` and `;`. Fixed by switching to `/* ... */`
+     block comments in `to_insert_sql()`, which don't depend on newlines at
+     all. If a future generated query embeds a `-- comment` anywhere else,
+     it will hit this same failure mode once flattened.
 2. **`tests/helpers/dbClient.ts`** — a direct `mssql` connection
    (`getStagingRow`), scoped to an allowlist of known tables (`STG_*` plus
    `My_Rush_Jobs`) by design (safety guard against interpolating an arbitrary

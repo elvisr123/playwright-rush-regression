@@ -46,7 +46,13 @@ def to_insert_sql(row: dict) -> str:
         return "'" + str(value).replace("'", "''") + "'"
 
     col_lines = ",\n          ".join(f"[{c}]" for c in MY_RUSH_JOBS_COLUMNS)
-    val_lines = ",\n      ".join(f"{lit(row.get(c))} -- {c}" for c in MY_RUSH_JOBS_COLUMNS)
+    # Block comments (/* ... */), not line comments (-- ...): this text gets
+    # typed into SSMS via SendKeys after scripts/ssms-capture.ps1 flattens
+    # all whitespace (including newlines) to single spaces. A line comment
+    # has no newline left to end at once flattened, so it swallows everything
+    # after it on the "line" — including the closing ) and ; — which is
+    # exactly what broke the first live INSERT attempt.
+    val_lines = ",\n      ".join(f"{lit(row.get(c))} /* {c} */" for c in MY_RUSH_JOBS_COLUMNS)
     return (
         "INSERT INTO [SOA].[dbo].[My_Rush_Jobs]\n"
         f"          ({col_lines})\n"
