@@ -131,6 +131,31 @@ avoids false positives from fields the Identity Profile mapping hardcodes to
 RUSH Lawson, and for `EQUIVALENT_VALUE_GROUPS` (fields like `Status` that
 use a different vocabulary in the UI vs. the DB for the same state).
 
+## Creating a new test identity (Phase 1 — VDI only, in progress)
+
+`identity-factory/` can generate a brand-new synthetic identity and INSERT it
+into `My_Rush_Jobs` via SSMS, with screenshot evidence, instead of requiring
+one to already exist. Requires Python 3 on the VDI (`python --version` —
+confirm this works; some VDI images only have the Microsoft Store shim
+installed, which errors instead of running).
+
+```bash
+python identity-factory/generate_identity.py --sources copley --lifecycle active
+```
+
+Or run the whole INSERT-and-verify flow (hand-edit `SOURCES_TO_CREATE` /
+`LIFECYCLE` at the top of the file first):
+
+```bash
+npx playwright test tests/sql/create-and-insert-identity.spec.ts
+```
+
+Only Copley Lawson has a real attribute template today — other sources raise
+a clear error until someone populates `identity-factory/source_templates.py`
+for them. This stops after DB verification; triggering the SailPoint source
+aggregation and handing off to the documentation pipeline above is a
+separate, not-yet-built next phase. See `AGENTS.md` for the full design.
+
 ## Project structure
 
 - `tests/config/testcases.ts` — the data: `TEST_CASES` (scenarios) and

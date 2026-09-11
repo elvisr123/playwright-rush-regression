@@ -12,6 +12,7 @@ import time
 from datetime import date, timedelta
 
 from name_generator import unused_person_name
+from source_templates import structural_fields
 
 INITIALS = os.environ.get("CREATOR_INITIALS", "AA").upper()
 SLOT = "000"
@@ -131,16 +132,19 @@ def stage_key(prefix: str, number: str) -> str:
     return f"{prefix}-{number}TESTCL{SLOT}{INITIALS}"
 
 
-def build_my_rush_jobs_row(key: str, number: str, first: str, last: str, lifecycle: str) -> dict:
-    """One fully populated My_Rush_Jobs row. Same shape as the VDI INSERT."""
+def build_my_rush_jobs_row(source_key: str, key: str, number: str, first: str, last: str, lifecycle: str) -> dict:
+    """One fully populated My_Rush_Jobs row: identity scaffold (this
+    function — name/date/generated-ID fields, the same for every source)
+    merged with the source's structural template (source_templates.py —
+    department/manager/location/job-code fields, constant per source).
+    Same shape as the VDI INSERT."""
     given = f"{first}{INITIALS}"
     display = f"{given} {last}"
     dates = lifecycle_dates(lifecycle)
     user_id = number[-6:]
     email = f"{given}{last}@gmail.com"
-    return {
+    scaffold = {
         "Stage_Key": key,
-        "Source_Name": "Copley Lawson",
         "Correlation_Key": f"{user_id}-{key}",
         "Username": display,
         "Work_Email": email,
@@ -160,52 +164,30 @@ def build_my_rush_jobs_row(key: str, number: str, first: str, last: str, lifecyc
         "Birth_Date": "1998-05-10",
         "Last_4_SSN": "0006",
         "Original_Start_Date": dates["Original_Start_Date"],
-        "User_Type": "RCMC",
-        "Employee_Level": "NURSE",
-        "Employee_Type": "EMPLOYEE",
         "Preferred_Language": None,
         "Alternate_Email": email,
         "Alternate_Phone_Number": "1897755752",
-        "Country": "US",
-        "City": "CHANA",
-        "State": "IL",
-        "Street_Address": "2905 STONEHILL RD ",
-        "Postal_Code": "61019",
-        "Company_Name": "101",
-        "Organization": "202",
-        "Vendor_Code": "EMP",
-        "Location": "NICU",
-        "Location_Code": "101",
-        "Department_Name": "NICU",
-        "Department": "101",
-        "Cost_Center": "43800",
-        "Title": "REGISTERED NURSE",
-        "Job_Code": "369",
         "Start_Date": dates["Start_Date"],
         "End_Date": dates["End_Date"],
         "Status": dates["Status"],
         "IIQDisabled": dates["IIQDisabled"],
-        "Job_Family": "REGISTNURS",
-        "Manager_Name": "REES, SHERRY A.",
-        "Primary_Position": "YES",
-        "Relationship_Status": "ACTIVE REGULAR",
         "Salary_Structure": None,
-        "Manager_Username": "99314",
-        "Manager_Employee_ID": "99314",
-        "OneUp_Manager_Employee_ID": "107641",
-        "OneUp_Manager_Network_ID": "107641",
-        "Work_Phone_Number": "1678777754",
-        "Work_Hours": "8hours",
         "Do_Not_Rehire": None,
         "Working_Remotely": None,
         "Manager_Hold": None,
         "Legal_Hold": None,
     }
+    row = {**scaffold, **structural_fields(source_key)}
+    missing = [c for c in MY_RUSH_JOBS_COLUMNS if c not in row]
+    if missing:
+        raise AssertionError(f"Source \"{source_key}\" template is missing columns: {missing}")
+    # Preserve MY_RUSH_JOBS_COLUMNS order (matches the VDI INSERT column list).
+    return {col: row[col] for col in MY_RUSH_JOBS_COLUMNS}
 
 
 def build_copley_attributes(source_id: str | None, key: str, number: str, first: str, last: str, lifecycle: str) -> dict:
     """ISC Create Account attributes = full SQL row plus native identity `name`."""
-    row = build_my_rush_jobs_row(key, number, first, last, lifecycle)
+    row = build_my_rush_jobs_row("copley", key, number, first, last, lifecycle)
     attrs = {"name": row["Stage_Key"], **row}
     if source_id:
         attrs["sourceId"] = source_id
@@ -220,14 +202,14 @@ def build_workflow_input(
     number: str | None = None,
 ) -> dict:
     """JSON body for the SailPoint External Trigger. Workflow uses this to Create Account."""
-    if source_key != "copley":
-        raise SystemExit("Only Copley attribute mapping is filled in. Add a pack for this source next.")
     if not first or not last:
         first, last = random_person_name()
     cfg = SOURCES[source_key]
     number = number or unique_id()
     key = stage_key(cfg["prefix"], number)
-    row = build_my_rush_jobs_row(key, number, first, last, lifecycle)
+    # Raises NotImplementedError via source_templates.structural_fields() for
+    # any source without a populated template yet — see source_templates.py.
+    row = build_my_rush_jobs_row(source_key, key, number, first, last, lifecycle)
     attrs = {"name": row["Stage_Key"], **row}
     return {
         "creatorInitials": INITIALS,
