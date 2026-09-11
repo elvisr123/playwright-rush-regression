@@ -46,8 +46,17 @@ $SW_MAXIMIZE = 3
 
 function Escape-SendKeys([string]$text) {
     # SendKeys treats these as control characters - wrap each in braces so
-    # it's typed literally instead of interpreted.
-    $specials = @('+', '^', '%', '~', '(', ')', '{', '}', '[', ']')
+    # it's typed literally instead of interpreted. { and } MUST be escaped
+    # FIRST: escaping any other char (e.g. "(" -> "{(}") introduces new { }
+    # characters, and if { / } are escaped after that, this second pass
+    # re-escapes the braces the first pass just inserted, compounding into
+    # garbage. This stayed hidden for a long time because every query tried
+    # so far had brackets but no parens (or vice versa) - not enough special
+    # characters together to compound. A real INSERT statement (60+ bracketed
+    # column names AND parens for the column list / VALUES clause) triggers
+    # it badly enough that SendKeys chokes partway through and SSMS only
+    # ends up with a truncated "INSERT INTO [SOA].[dbo].[My_Rush_Jobs] ".
+    $specials = @('{', '}', '+', '^', '%', '~', '(', ')', '[', ']')
     foreach ($ch in $specials) {
         $text = $text.Replace($ch, '{' + $ch + '}')
     }

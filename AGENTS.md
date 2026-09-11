@@ -76,6 +76,19 @@ current preference:
      rest of the file (`"string missing terminator"` / `"missing closing
      '}'"` errors near EOF). Don't reintroduce non-ASCII characters in this
      file.
+   - `Escape-SendKeys`'s `$specials` array must process `{` and `}` **first**
+     (2026-09-11 fix). Escaping any other special char wraps it in braces
+     (e.g. `(` -> `{(}`) — if `{`/`}` are escaped in a *later* pass (the
+     original order was `+^%~(){}[]`), that later pass re-escapes the braces
+     the earlier pass just inserted, compounding into garbage (traced: a
+     lone `(` becomes `{{{}}({}}` instead of the correct `{(}`). This stayed
+     hidden through every SELECT query tried so far because they had
+     brackets but no parens (nothing to compound with). It broke badly on
+     the first real INSERT (`tests/sql/create-and-insert-identity.spec.ts`,
+     61 bracketed column names + parens for the column list/VALUES clause):
+     SendKeys choked partway through and SSMS ended up with only
+     `INSERT INTO [SOA].[dbo].[My_Rush_Jobs] ` typed — cut off at exactly the
+     first `(`, matching the corruption's onset. Fixed order: `{}+^%~()[]`.
 2. **`tests/helpers/dbClient.ts`** — a direct `mssql` connection
    (`getStagingRow`), scoped to an allowlist of known tables (`STG_*` plus
    `My_Rush_Jobs`) by design (safety guard against interpolating an arbitrary
