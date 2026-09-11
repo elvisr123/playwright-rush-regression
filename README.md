@@ -120,11 +120,16 @@ Once `DB_SERVER` / `DB_DATABASE` / `DB_USERNAME` / `DB_PASSWORD` are set in `.en
 `tests/sources/**/*.spec.ts`) automatically cross-checks each known HR
 source's own Account Detail page against its own row in `My_Rush_Jobs`, and
 adds a **Database Checks** section to the `.docx` report listing any
-mismatches (or "no discrepancies found" if everything matched). With no
-`DB_*` vars set — the normal case running outside the VDI — this adds
-nothing and the section doesn't appear at all. See `AGENTS.md` for how this
+mismatches (or "no discrepancies found" if everything matched), plus a
+**Database Checks — Evidence** section with an actual screenshot per
+checked source — a table of every compared field, the on-screen value, the
+live `My_Rush_Jobs` value, and the result — so the check's own proof of
+having run against a real row is visible in the report, not just a text
+summary. With no `DB_*` vars set — the normal case running outside the
+VDI — both sections are skipped entirely. See `AGENTS.md` for how this
 avoids false positives from fields the Identity Profile mapping hardcodes to
-RUSH Lawson.
+RUSH Lawson, and for `EQUIVALENT_VALUE_GROUPS` (fields like `Status` that
+use a different vocabulary in the UI vs. the DB for the same state).
 
 ## Project structure
 

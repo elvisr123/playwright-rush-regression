@@ -107,7 +107,21 @@ current preference:
      false mismatches. Date-valued fields (e.g. `Birth_Date`) get a
      best-effort date-aware comparison (`valuesRoughlyMatch`) before falling
      back to string equality, since the UI and the DB often render the same
-     date in different formats.
+     date in different formats. `EQUIVALENT_VALUE_GROUPS` handles fields
+     that use a different vocabulary in each system for the same state (e.g.
+     `Status`: UI shows Enabled/Disabled derived from `IIQDisabled`, while
+     `My_Rush_Jobs`'s own `Status` column uses Active/Inactive/Terminated) —
+     confirmed via a live run (2026-09-11, Non-Employee Workforce) that this
+     pairing genuinely differs by vocabulary, not by an actual data problem.
+   - **Verified end-to-end against a live VDI run (2026-09-11)**: the report
+     produced a "Database Checks" section with one flagged line
+     (`Status: Enabled vs. Active`, the vocabulary case above) plus a new
+     "Database Checks — Evidence" section — a screenshot per checked source
+     of the actual field-by-field comparison (rendered as an HTML table via
+     `captureDbCheckEvidence`, screenshotted in a throwaway page opened on
+     the same browser context so it never disturbs the main `page`'s
+     navigation state) — added specifically because a text-only summary
+     doesn't prove the check ran against a real, live row.
 
 ## Project layout notes
 

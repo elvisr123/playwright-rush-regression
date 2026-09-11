@@ -227,18 +227,43 @@ function collectBlanks(context: string, values: Record<string, string[]> | void,
   }
 }
 
+// Some fields use a different vocabulary in the UI vs. the DB for the same
+// underlying state — e.g. Status: the UI shows Enabled/Disabled (derived
+// from IIQDisabled), while My_Rush_Jobs' own Status column uses
+// Active/Inactive/Terminated for the same lifecycle state. Without this,
+// that pairing would flag as a mismatch on every single run. Extend this if
+// another field turns out to have a similar UI-vocabulary-vs-DB-vocabulary
+// split — don't assume every field needs it.
+const EQUIVALENT_VALUE_GROUPS: string[][] = [
+  ['enabled', 'active'],
+  ['disabled', 'inactive', 'terminated'],
+];
+
+function equivalentGroup(value: string): string[] | undefined {
+  return EQUIVALENT_VALUE_GROUPS.find((group) => group.includes(value));
+}
+
 // Best-effort equality for the DB cross-check below: exact match first, then
-// falls back to comparing as dates — the UI and the My_Rush_Jobs staging
-// table often render the same date differently (e.g. "05/10/1998" on screen
-// vs "1998-05-10" in the DB), which would otherwise flag as a false mismatch
-// on every single date field, every run.
+// the vocabulary-equivalence groups above, then falls back to comparing as
+// dates — the UI and the My_Rush_Jobs staging table often render the same
+// date differently (e.g. "05/10/1998" on screen vs "1998-05-10" in the DB),
+// which would otherwise flag as a false mismatch on every date field, every run.
 function valuesRoughlyMatch(uiValue: string, dbValue: string): boolean {
   const a = uiValue.trim().toLowerCase();
   const b = dbValue.trim().toLowerCase();
   if (a === b) return true;
+  const group = equivalentGroup(a);
+  if (group && group.includes(b)) return true;
   const dateA = new Date(uiValue);
   const dateB = new Date(dbValue);
   return !isNaN(dateA.getTime()) && !isNaN(dateB.getTime()) && dateA.getTime() === dateB.getTime();
+}
+
+interface DbComparisonRow {
+  field: string;
+  uiValue: string;
+  dbValue: string;
+  result: 'match' | 'mismatch' | 'skipped';
 }
 
 // Cross-checks one source's Account Detail page against its own row in the
@@ -249,20 +274,84 @@ function valuesRoughlyMatch(uiValue: string, dbValue: string): boolean {
 // source is primary. Only fields that exist as an exact-name column on the DB
 // row are compared (Account Detail field labels are already underscore-cased
 // to match My_Rush_Jobs column names) — this also naturally skips UI-only
-// fields like "Identity" or "Source Name" that have no DB equivalent. Returns
-// only mismatch lines; a clean comparison contributes nothing.
-function compareAccountToDbRow(sourceName: string, accountValues: Record<string, string[]>, dbRow: Record<string, string>): string[] {
-  const mismatches: string[] = [];
+// fields like "Identity" or "Source Name" that have no DB equivalent.
+function buildDbComparisonRows(accountValues: Record<string, string[]>, dbRow: Record<string, string>): DbComparisonRow[] {
+  const rows: DbComparisonRow[] = [];
   for (const [field, occurrences] of Object.entries(accountValues)) {
     if (!(field in dbRow)) continue;
     const uiValue = occurrences[0];
     const dbValue = dbRow[field];
-    if (isBlank(uiValue) || isBlank(dbValue)) continue;
-    if (!valuesRoughlyMatch(uiValue, dbValue)) {
-      mismatches.push(`${sourceName}: ${field} — on-screen "${uiValue}" vs. My_Rush_Jobs "${dbValue}"`);
+    if (isBlank(uiValue) || isBlank(dbValue)) {
+      rows.push({ field, uiValue, dbValue, result: 'skipped' });
+      continue;
     }
+    rows.push({ field, uiValue, dbValue, result: valuesRoughlyMatch(uiValue, dbValue) ? 'match' : 'mismatch' });
   }
-  return mismatches;
+  return rows;
+}
+
+function formatDbMismatchLines(sourceName: string, rows: DbComparisonRow[]): string[] {
+  return rows
+    .filter((r) => r.result === 'mismatch')
+    .map((r) => `${sourceName}: ${r.field} — on-screen "${r.uiValue}" vs. My_Rush_Jobs "${r.dbValue}"`);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Renders the DB cross-check as an actual screenshot (a table of field / UI
+// value / DB value / result), the same evidence-screenshot pattern used
+// everywhere else in this suite — a text-only report section doesn't prove
+// the check ran against a real, live row. Opens a throwaway page in the
+// SAME browser context (never touches the caller's main `page`, so it can't
+// disturb its navigation state), screenshots it, then closes it.
+async function captureDbCheckEvidence(
+  page: Page,
+  sourceName: string,
+  stageKey: string,
+  rows: DbComparisonRow[],
+  outPath: string
+): Promise<void> {
+  const rowsHtml = rows
+    .map((r) => {
+      const color = r.result === 'mismatch' ? '#C00000' : r.result === 'skipped' ? '#8a8a8a' : '#1a7f37';
+      const label = r.result === 'mismatch' ? 'MISMATCH' : r.result === 'skipped' ? 'SKIPPED (blank)' : 'MATCH';
+      return `<tr>
+        <td>${escapeHtml(r.field)}</td>
+        <td>${escapeHtml(r.uiValue)}</td>
+        <td>${escapeHtml(r.dbValue)}</td>
+        <td style="color:${color};font-weight:bold;">${label}</td>
+      </tr>`;
+    })
+    .join('');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+    body { font-family: Arial, sans-serif; padding: 20px; color: #222; }
+    h2 { margin: 0 0 4px; }
+    .meta { color: #555; margin-bottom: 16px; font-size: 13px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; font-size: 13px; }
+    th { background: #f0f0f0; }
+  </style></head><body>
+    <h2>My_Rush_Jobs Cross-Check — ${escapeHtml(sourceName)}</h2>
+    <div class="meta">Stage_Key: ${escapeHtml(stageKey)} &nbsp;|&nbsp; Queried live at ${new Date().toLocaleString()}</div>
+    <table>
+      <tr><th>Field</th><th>On-Screen Value</th><th>My_Rush_Jobs Value</th><th>Result</th></tr>
+      ${rowsHtml}
+    </table>
+  </body></html>`;
+
+  const evidencePage = await page.context().newPage();
+  try {
+    await evidencePage.setContent(html);
+    await evidencePage.screenshot({ path: outPath, fullPage: true });
+  } finally {
+    await evidencePage.close();
+  }
 }
 
 /**
@@ -284,6 +373,7 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
   const dbCheckEnabled = isDbConfigured();
   const databaseChecks: string[] = [];
   const dbCheckedSources: string[] = [];
+  const databaseCheckImages: { path: string; caption: string }[] = [];
 
   await page.goto('https://rush-sb.identitynow.com/ui/d/mysailpoint');
   await page.getByRole('link', { name: 'Admin' }).click();
@@ -472,7 +562,11 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
         if (!dbRow) {
           databaseChecks.push(`${sourceName}: no row found in My_Rush_Jobs for Stage_Key "${stageKey}"`);
         } else {
-          databaseChecks.push(...compareAccountToDbRow(sourceName, accountValues, dbRow));
+          const comparisonRows = buildDbComparisonRows(accountValues, dbRow);
+          databaseChecks.push(...formatDbMismatchLines(sourceName, comparisonRows));
+          const evidencePath = `temp/${label}_5b_${sourceName.replace(/\s+/g, '_')}_DBCheck.png`;
+          await captureDbCheckEvidence(page, sourceName, stageKey, comparisonRows, evidencePath);
+          databaseCheckImages.push({ path: evidencePath, caption: `${sourceName} — My_Rush_Jobs cross-check` });
         }
       } catch (err) {
         databaseChecks.push(`${sourceName}: database check failed — ${(err as Error).message}`);
@@ -566,6 +660,14 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
           ? ` Field list for ${unconfirmedFieldSources.join(', ')} is based on the Rush Master Data Mapping document's technical attribute names, not yet confirmed against a live screenshot — verify the highlighted fields below look correct.`
           : ''),
       images: accountDetailImages,
+    });
+  }
+
+  if (databaseCheckImages.length > 0) {
+    sections.push({
+      title: 'Database Checks — Evidence',
+      note: 'A screenshot of the actual My_Rush_Jobs row values fetched live during this run, alongside what was captured on screen — this is the underlying data behind the Database Checks summary below.',
+      images: databaseCheckImages,
     });
   }
 
