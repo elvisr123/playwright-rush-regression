@@ -92,10 +92,32 @@ Start-Sleep -Milliseconds 1000
 [System.Windows.Forms.SendKeys]::SendWait("{DEL}")
 Start-Sleep -Milliseconds 300
 
-$flatQuery = ($Query -replace '\s+', ' ').Trim()
-$escapedQuery = Escape-SendKeys $flatQuery
+# Type real line breaks (SendKeys "{ENTER}") instead of flattening the whole
+# query to one line. Each line is trimmed on both ends before typing rather
+# than keeping the source file's own indentation: SSMS's editor auto-indents
+# to match the previous line after Enter, so also typing the original
+# leading whitespace would compound (line 2 = auto-indent + typed indent,
+# line 3 = that + typed indent again, ...), producing a growing staircase.
+# Trimming avoids that; the tradeoff is left-aligned rather than
+# hand-indented lines, which only matters cosmetically here - SQL Server
+# doesn't care about whitespace/formatting.
 Write-Output "Typing query..."
-[System.Windows.Forms.SendKeys]::SendWait($escapedQuery)
+$lines = $Query -split "`r?`n"
+for ($i = 0; $i -lt $lines.Count; $i++) {
+    $line = $lines[$i].Trim()
+    if ($line.Length -gt 0) {
+        [System.Windows.Forms.SendKeys]::SendWait((Escape-SendKeys $line))
+    }
+    if ($i -lt $lines.Count - 1) {
+        # {ESC} first: dismisses any IntelliSense/autocomplete suggestion
+        # popup SSMS may have shown while typing this line - without it,
+        # Enter can accept the popup's highlighted suggestion instead of
+        # inserting a newline, silently corrupting the next line's content.
+        [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+        [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+        Start-Sleep -Milliseconds 30
+    }
+}
 Start-Sleep -Milliseconds 500
 
 Write-Output "Executing (F5)..."

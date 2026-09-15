@@ -102,6 +102,32 @@ current preference:
      block comments in `to_insert_sql()`, which don't depend on newlines at
      all. If a future generated query embeds a `-- comment` anywhere else,
      it will hit this same failure mode once flattened.
+   - A live run after both fixes above still failed: the verification
+     SELECT's query tab showed leftover INSERT-shaped text and
+     "Disconnected." in the status bar (2026-09-15) — root cause not fully
+     confirmed, but strongly points to stale/accumulated query tabs from
+     many repeated test runs in the same SSMS session confusing the
+     "find the SSMS window" + `Ctrl+N` logic, which only checks for the
+     SSMS *process* window, not which tab is actually focused/connected.
+     Closing extra tabs / reconnecting before a run is the current
+     workaround; a more robust fix (detecting "Disconnected" and
+     reconnecting, or avoiding tab accumulation) hasn't been built yet.
+   - **Line breaks (2026-09-15, requested)**: typing used to flatten the
+     whole query to one line (`-replace '\s+', ' '`) — reliable for SendKeys
+     but produces an unreadable 2000+ character single line in the
+     screenshot. Now types real `{ENTER}` presses at the original line
+     breaks instead, with each line trimmed (not just whitespace-collapsed)
+     before typing — SSMS's editor auto-indents to match the previous line,
+     so also typing the source file's own leading whitespace would compound
+     across lines (line 2 = auto-indent + typed indent, line 3 = that +
+     typed indent again, ...). Also sends `{ESC}` before each `{ENTER}` to
+     dismiss any IntelliSense/autocomplete popup first — Enter with a
+     popup open accepts the suggestion instead of inserting a newline,
+     which would silently corrupt the next line. **Not yet verified live**
+     — this is a real reliability tradeoff (more surface area for SSMS's
+     editor to interfere mid-type) accepted deliberately for readability;
+     if it proves flaky, reverting to the flattened single-line approach is
+     the fallback.
 2. **`tests/helpers/dbClient.ts`** — a direct `mssql` connection
    (`getStagingRow`), scoped to an allowlist of known tables (`STG_*` plus
    `My_Rush_Jobs`) by design (safety guard against interpolating an arbitrary
