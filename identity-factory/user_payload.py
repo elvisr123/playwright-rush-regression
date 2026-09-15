@@ -25,6 +25,7 @@ SOURCES = {
     "echo": {"name": "ECHO Credentialed Providers", "prefix": "EC"},
     "ellucian": {"name": "Ellucian Students", "prefix": "ES"},
     "nerm": {"name": "Non-Employee Workforce", "prefix": "NE"},
+    "workday": {"name": "Rush Workday", "prefix": "WD"},
 }
 
 # Column order matches the VDI INSERT into [SOA].[dbo].[My_Rush_Jobs].

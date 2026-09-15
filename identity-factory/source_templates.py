@@ -55,6 +55,60 @@ SOURCE_TEMPLATES: dict[str, dict] = {
     #             fresh SELECT TOP 5 * FROM My_Rush_Jobs WHERE Source_Name =
     #             'Ellucian Students' on the VDI first.
     # "nerm": Phase 3 — populate from a live reference row (NE-19825552TEST000PDPPL)
+    "workday": {
+        # Extracted from a real Rush Workday INSERT sample (2026-09-15), plus
+        # a user-provided old-vs-new Workday field mapping clarification.
+        # Unlike Copley, several identity-plumbing fields the scaffold
+        # normally computes (Username, Work_Email, Provider_National_ID) are
+        # NULL for this source in practice — those are overridden below too,
+        # not just the structural ones, since structural_fields() merges on
+        # top of the scaffold and can override any column.
+        "Source_Name": "Rush Workday",
+        "Username": None,
+        "Work_Email": None,
+        "Provider_National_ID": None,
+        "Email_Required": "Yes",
+        "User_Type": None,
+        "Employee_Level": "RUSH_INDIVCONT",
+        "Employee_Type": "EE_Standard",
+        "Country": "US",
+        "City": "Chicago",
+        "State": "IL",
+        "Street_Address": "1700 W. Van Buren St",
+        "Postal_Code": "60612",
+        "Company_Name": "Rush",
+        "Organization": "10",
+        "Vendor_Code": "EMP",
+        "Location": "Chicago Triangle Office Building TOB",
+        "Location_Code": "Chicago Triangle Office Building TOB",
+        "Department_Name": "System Center Qlt Analytics",
+        "Department": "10755",
+        "Cost_Center": "10010942",
+        "Title": "Clinical Data Abstractor Per Diem RUMC",
+        "Job_Code": "03524",
+        "Job_Family": None,
+        # Sample row had no manager on file — worth confirming this is
+        # representative rather than a gap in that specific record.
+        "Manager_Name": None,
+        "Primary_Position": "YES",
+        # Sample value was the literal string "true", unlike Copley's
+        # descriptive "ACTIVE REGULAR" — kept as-is per the real sample
+        # rather than guessing a descriptive equivalent.
+        "Relationship_Status": "true",
+        "Manager_Username": None,
+        "Manager_Employee_ID": "140281",
+        "OneUp_Manager_Employee_ID": "980927",
+        "OneUp_Manager_Network_ID": None,
+        "Work_Phone_Number": None,
+        "Work_Hours": "Variable_time",
+        # Confirmed (not incidental): new Workday never returns a value here.
+        "Do_Not_Rehire": None,
+        # Per user decision (2026-09-15): keep the old-Workday convention —
+        # Manager_Hold defaults to the string "False"; Legal_Hold stays NULL
+        # since its new-Workday behavior is still genuinely unconfirmed.
+        "Manager_Hold": "False",
+        "Legal_Hold": None,
+    },
 }
 
 
