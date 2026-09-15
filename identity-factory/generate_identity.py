@@ -23,6 +23,16 @@ import json
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# Load identity-factory/.env by its own absolute path, not a bare
+# load_dotenv() — this script is normally invoked as
+# "python identity-factory/generate_identity.py" from the repo root (that's
+# how tests/helpers/generatorClient.ts calls it too), and load_dotenv()'s
+# default cwd-relative search would never find a .env one directory below
+# the current working directory.
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
 from excel_store import append_identity, used_first_last, used_stage_keys
 from local_table import save_row, to_insert_sql
 from user_payload import LIFECYCLES, SOURCES, build_my_rush_jobs_row, stage_key, unique_id, unused_person_name
