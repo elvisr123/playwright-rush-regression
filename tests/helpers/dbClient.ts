@@ -63,6 +63,25 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+// mssql parses a SQL `date` column (no time component) as a UTC-midnight JS
+// Date. String(date) then formats it in the *local machine* timezone, which
+// rolls UTC midnight back to the previous evening — e.g. a stored
+// 1998-05-10 reads back as "Sat May 09 1998 19:00:00 GMT-0500 ...". The
+// stored data is correct; only naive stringification is wrong. Format as a
+// plain YYYY-MM-DD when the UTC time-of-day is exactly midnight (true for
+// every date-only column in this schema), so it matches the same format
+// generated identities use (identity-factory/user_payload.py's
+// lifecycle_dates()) and compares correctly with a plain exact-string
+// check. Falls back to full ISO for anything with a real time component.
+function formatDbValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) {
+    const iso = value.toISOString();
+    return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : iso;
+  }
+  return String(value);
+}
+
 /**
  * Fetches one row from a STG_* staging table by Stage_Key, normalized to
  * string values. Returns undefined if no row matched. Opens and closes its
@@ -89,7 +108,7 @@ export async function getStagingRow(table: string, stageKey: string): Promise<Re
 
     const normalized: Record<string, string> = {};
     for (const [key, value] of Object.entries(row)) {
-      normalized[key] = value === null || value === undefined ? '' : String(value);
+      normalized[key] = formatDbValue(value);
     }
     return normalized;
   } finally {

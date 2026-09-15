@@ -104,14 +104,15 @@ current preference:
      it will hit this same failure mode once flattened.
    - A live run after both fixes above still failed: the verification
      SELECT's query tab showed leftover INSERT-shaped text and
-     "Disconnected." in the status bar (2026-09-15) — root cause not fully
-     confirmed, but strongly points to stale/accumulated query tabs from
-     many repeated test runs in the same SSMS session confusing the
-     "find the SSMS window" + `Ctrl+N` logic, which only checks for the
-     SSMS *process* window, not which tab is actually focused/connected.
-     Closing extra tabs / reconnecting before a run is the current
-     workaround; a more robust fix (detecting "Disconnected" and
-     reconnecting, or avoiding tab accumulation) hasn't been built yet.
+     "Disconnected." in the status bar (2026-09-15). **Confirmed the cause**:
+     stale/accumulated query tabs from many repeated test runs in the same
+     SSMS session — the "find the SSMS window" + `Ctrl+N` logic only checks
+     for the SSMS *process* window, not which tab is actually
+     focused/connected. Closing extra tabs / reconnecting to a clean state
+     before a run fixed it on the very next attempt. Current workaround
+     (close extra tabs before running); a more robust fix (detecting
+     "Disconnected" and reconnecting, or avoiding tab accumulation) hasn't
+     been built.
    - **Line breaks (2026-09-15, requested)**: typing used to flatten the
      whole query to one line (`-replace '\s+', ' '`) — reliable for SendKeys
      but produces an unreadable 2000+ character single line in the
@@ -123,11 +124,9 @@ current preference:
      typed indent again, ...). Also sends `{ESC}` before each `{ENTER}` to
      dismiss any IntelliSense/autocomplete popup first — Enter with a
      popup open accepts the suggestion instead of inserting a newline,
-     which would silently corrupt the next line. **Not yet verified live**
-     — this is a real reliability tradeoff (more surface area for SSMS's
-     editor to interfere mid-type) accepted deliberately for readability;
-     if it proves flaky, reverting to the flattened single-line approach is
-     the fallback.
+     which would silently corrupt the next line. **Verified working
+     (2026-09-15, same successful Rush Workday run above)** — no corruption
+     from IntelliSense/auto-indent observed.
 2. **`tests/helpers/dbClient.ts`** — a direct `mssql` connection
    (`getStagingRow`), scoped to an allowlist of known tables (`STG_*` plus
    `My_Rush_Jobs`) by design (safety guard against interpolating an arbitrary
@@ -184,7 +183,8 @@ Everything above only **documents** identities that already exist in the sandbox
 - **`tests/helpers/generatorClient.ts`** — shells out to the above via `execFileSync('python', ...)`, same cross-process pattern already established for `powershell.exe`. Throws a clear, actionable error (not a raw `ENOENT`) if `python` isn't on PATH — **this is a real, confirmed risk**: an earlier VDI session showed `python --version` failing with "Python was not found; run without arguments to install from the Microsoft Store" (the Windows App Execution Alias shim), meaning Python may not actually be installed/usable on the VDI yet. Confirm `python --version` works there before relying on this.
 - **`tests/sql/create-and-insert-identity.spec.ts`** — new spec (auto-routes into the `sql-tools` project, confirmed via `--list`, zero `playwright.config.ts` changes needed). Hand-edited `SOURCES_TO_CREATE`/`LIFECYCLE` constants at the top, same convention as every other spec. Flow per generated row: `runGenerator()` → INSERT via `scripts/ssms-capture.ps1` (screenshot) → verification SELECT via the same script (screenshot) → `getStagingRow` + `evaluateCheck` self-check per field (expected values are the row we just generated, not hand-maintained) → **`buildIdentityCreationReport()`** (new, in `tests/helpers/buildReport.ts`, 2026-09-15) compiles both SSMS screenshots plus a real Word **table** (not just images — `docx`'s `Table`/`TableRow`/`TableCell`, color-coded MATCH/MISMATCH/SKIPPED/NO ROW per field) into `temp/Creation_<source>_<stageKey>_<timestamp>.docx`, one per source → writes `temp/pending_aggregation_<label>.json`, the documented handoff point for the not-yet-built aggregation step. This is a separate report builder from the existing `buildReport()` (that one is the multi-page UI-based regression report; this one is purpose-built for the two-screenshot-plus-table creation-evidence shape) — don't conflate the two or try to unify their signatures, they serve different report shapes. Verified offline (fake screenshot + fake rows) that the docx actually contains a real `<w:tbl>` table with the expected field names and MATCH/MISMATCH/SKIPPED labels. **The actual INSERT-via-SSMS step itself is still not yet confirmed to succeed end-to-end on the VDI** — the report-building code is verified independently of that.
 - Local test-run pollution note: running `generate_identity.py` for real writes to `identity-factory/data/My_Rush_Jobs.sqlite`, `Copley_test_identities.xlsx`, and overwrites `latest_insert.sql` (all tracked in git) — a throwaway/verification run's output was reverted with `git checkout` during this build rather than committed; be mindful of this when testing so real generated-identity history doesn't get committed by accident alongside throwaway test runs.
-- **INSERT execution bugs found on the first live VDI attempts (2026-09-11/15), both fixed**: `Escape-SendKeys` in `scripts/ssms-capture.ps1` escaped `(){}[]` in the wrong order (parens/brackets before braces), corrupting long queries — fixed by escaping `{`/`}` first. Separately, `to_insert_sql()`'s per-value `-- ColumnName` line comments broke once `ssms-capture.ps1` flattens all whitespace to one line (a line comment with no newline left to stop at swallows everything after it, including the closing `);`) — fixed by switching to `/* ColumnName */` block comments. Both are documented in detail under "SQL Server verification" above; still **not yet confirmed end-to-end** (INSERT actually landing + verification passing) as of the workday addition below.
+- **INSERT execution bugs found on the first live VDI attempts (2026-09-11/15), all fixed**: `Escape-SendKeys` in `scripts/ssms-capture.ps1` escaped `(){}[]` in the wrong order (parens/brackets before braces), corrupting long queries — fixed by escaping `{`/`}` first. `to_insert_sql()`'s per-value `-- ColumnName` line comments broke once `ssms-capture.ps1` flattens all whitespace to one line (a line comment with no newline left to stop at swallows everything after it, including the closing `);`) — fixed by switching to `/* ColumnName */` block comments (later superseded by real line breaks, see below). A stale/disconnected query tab (from accumulated tabs across many repeated runs) once caused a "no row found" false failure — worked around by closing extra SSMS tabs before a run. **Confirmed end-to-end working (2026-09-15, Rush Workday, `WD-2609158204TESTCL000EE`)**: INSERT executed, verification SELECT found the row, and every non-date field matched exactly.
+  - **Date comparison bug, found by that first successful run, fixed**: `getStagingRow` did `String(value)` on every column — for a JS `Date` (how `mssql` parses a SQL `date` column with no time component), `String()` formats in the *local machine* timezone, rolling a UTC-midnight date back to the previous evening (e.g. stored `1998-05-10` read back as `"Sat May 09 1998 19:00:00 GMT-0500 ..."`). The stored data was correct; only the stringification was wrong, and it broke exact-match comparisons in `create-and-insert-identity.spec.ts` (four date fields falsely flagged MISMATCH). Fixed via `formatDbValue()`: format as plain `YYYY-MM-DD` when the UTC time-of-day is exactly midnight, matching the format `identity-factory/user_payload.py`'s `lifecycle_dates()` already generates; full ISO otherwise. This also quietly fixes the same latent risk everywhere else `getStagingRow` is used (the `run_regression_case.ts` "Database Checks" cross-check already had its own `valuesRoughlyMatch` date-fallback working around this same issue — that fallback is now redundant but harmless, left in place).
 - **`workday` source added (2026-09-15)**, from a real Rush Workday INSERT sample + a user-provided old-vs-new field mapping note — `SOURCES["workday"]` (prefix `WD`) in `user_payload.py`, template in `source_templates.py`. Open items worth confirming once this runs live, not yet validated:
   - `Manager_Hold` defaults to the string `"False"` and `Legal_Hold` stays `NULL`, per an explicit user decision to keep the old-Workday convention — new Workday's actual behavior here was flagged by the user themselves as unconfirmed.
   - `Status`/`End_Date` still come from the shared `lifecycle_dates()` scaffold (`Active`/`Enabled` vocabulary) even though the one real sample row had both `NULL` — kept this way because the whole lifecycle-generation feature depends on it, but if Workday's real lifecycle-state vocabulary differs from Copley's, this will need its own `EQUIVALENT_VALUE_GROUPS`-style handling later (same pattern already used in `run_regression_case.ts` for `Status` Enabled/Active).
