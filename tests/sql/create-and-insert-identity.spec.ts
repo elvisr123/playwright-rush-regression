@@ -4,8 +4,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { runGenerator } from '../helpers/generatorClient';
 import { getStagingRow } from '../helpers/dbClient';
-import { evaluateCheck, formatCheckResult } from '../helpers/expectedValueCheck';
-import { ExpectedValueCheck } from '../config/testcases';
+import { evaluateCheck } from '../helpers/expectedValueCheck';
+import { buildIdentityCreationReport, CreationAttributeRow } from '../helpers/buildReport';
+import { buildReportFileName } from '../helpers/sharepointUpload';
 import { LifecycleState } from '../config/lifecycles';
 
 // Creates a brand-new synthetic My_Rush_Jobs identity and INSERTs it via
@@ -16,6 +17,12 @@ import { LifecycleState } from '../config/lifecycles';
 // pipeline) is a separate, not-yet-built phase — this test stops after
 // writing temp/pending_aggregation_<label>.json, the documented handoff
 // point for that future step.
+//
+// Produces a Word report per source (temp/Creation_<source>_<stageKey>_...
+// .docx, via buildIdentityCreationReport in tests/helpers/buildReport.ts):
+// the full SSMS window right after the INSERT, the full SSMS window showing
+// the verification SELECT, and a table of every generated field vs. what
+// was actually read back from the DB.
 //
 // Windows-only, same precondition as ssms-my-rush-jobs.spec.ts: SSMS itself
 // only runs on Windows, and must already be open and connected (see
@@ -88,36 +95,57 @@ test('Create identity — INSERT + verify via SSMS', async () => {
     console.log(`SELECT screenshot: ${selectScreenshot}`);
 
     // Structured verification: confirm every generated field actually landed
-    // in the DB, via the same evaluateCheck/formatCheckResult logic already
-    // used by the UI-based expectedValues checks and the standalone SQL
-    // DB-verify test — "expected" here is the row we just generated, not a
-    // hand-maintained list. Only PASS/FAIL is printed per field (not every
-    // line, unlike the standalone SQL test) since a full row is 50+ fields —
-    // a wall of PASS lines isn't useful; failures are what matter here.
+    // in the DB, via the same evaluateCheck logic already used by the
+    // UI-based expectedValues checks and the standalone SQL DB-verify test
+    // — "expected" here is the row we just generated, not a hand-maintained
+    // list. Every field (not just failures) becomes a row in the Word
+    // report's attribute table; only mismatches get logged to the console,
+    // since a full row is 50+ fields and a wall of PASS lines isn't useful there.
     const dbRow = await getStagingRow('My_Rush_Jobs', row.stageKey);
     const values: Record<string, string[]> = {};
     if (dbRow) {
       for (const [column, value] of Object.entries(dbRow)) values[column] = [value];
     }
 
-    const checks: ExpectedValueCheck[] = Object.entries(row.row)
-      .filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '')
-      .map(([field, value]) => ({ field, expected: String(value) }));
-
-    let rowFailed = !dbRow;
     if (!dbRow) {
       console.log(`  FAIL — no row found in My_Rush_Jobs for Stage_Key "${row.stageKey}" after INSERT`);
     }
-    for (const check of checks) {
-      const outcome = evaluateCheck(check, values);
-      if (!outcome || outcome.result === 'FAIL') {
-        console.log(`  ${formatCheckResult(check, outcome)}`);
-        rowFailed = true;
+
+    const attributeRows: CreationAttributeRow[] = Object.entries(row.row).map(([field, value]) => {
+      const generatedValue = value === null || value === undefined ? '' : String(value);
+      const dbValue = dbRow?.[field] ?? '';
+      if (!generatedValue.trim()) {
+        return { field, generatedValue: 'NULL', dbValue: dbValue || 'NULL', result: 'skipped' as const };
       }
-    }
+      if (!dbRow) {
+        return { field, generatedValue, dbValue: '(no row found)', result: 'no_row' as const };
+      }
+      const outcome = evaluateCheck({ field, expected: generatedValue }, values);
+      if (outcome?.result !== 'PASS') {
+        console.log(`  MISMATCH — ${field}: generated "${generatedValue}", My_Rush_Jobs has "${dbValue || '(not found)'}"`);
+      }
+      const result: CreationAttributeRow['result'] = outcome?.result === 'PASS' ? 'match' : 'mismatch';
+      return { field, generatedValue, dbValue: dbValue || '(not found)', result };
+    });
+
+    const rowFailed = !dbRow || attributeRows.some((r) => r.result === 'mismatch' || r.result === 'no_row');
     if (!rowFailed) {
-      console.log(`  All ${checks.length} generated fields verified in My_Rush_Jobs.`);
+      console.log(`  All ${attributeRows.length} generated fields verified in My_Rush_Jobs.`);
     }
+
+    const reportPath = path.join(outDir, `Creation_${buildReportFileName(`${row.sourceKey}_${row.stageKey}`)}`);
+    await buildIdentityCreationReport(
+      {
+        identityName: `${generated.firstName} ${generated.lastName}`,
+        stageKey: row.stageKey,
+        sourceName: row.sourceName,
+        lifecycle: generated.lifecycle,
+      },
+      insertScreenshot,
+      selectScreenshot,
+      attributeRows,
+      reportPath
+    );
 
     anyFailed = anyFailed || rowFailed;
     verifiedRows.push({

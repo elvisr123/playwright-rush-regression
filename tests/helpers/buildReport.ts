@@ -1,4 +1,18 @@
-import { Document, Packer, Paragraph, ImageRun, HeadingLevel, TextRun, AlignmentType } from 'docx';
+import {
+  Document,
+  Packer,
+  Paragraph,
+  ImageRun,
+  HeadingLevel,
+  TextRun,
+  AlignmentType,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
+  ShadingType,
+  VerticalAlign,
+} from 'docx';
 import * as fs from 'fs';
 import * as path from 'path';
 import sizeOf from 'image-size';
@@ -308,4 +322,165 @@ export async function buildReport(
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, buffer);
   console.log(`Report staged for SharePoint upload: ${outputPath}`);
+}
+
+export interface CreationReportMetadata {
+  identityName: string;
+  stageKey: string;
+  sourceName: string;
+  lifecycle: string;
+}
+
+export interface CreationAttributeRow {
+  field: string;
+  generatedValue: string;
+  dbValue: string;
+  result: 'match' | 'mismatch' | 'skipped' | 'no_row';
+}
+
+function screenshotParagraph(imagePath: string, caption: string): Paragraph[] {
+  const buffer = fs.readFileSync(imagePath);
+  const dimensions = sizeOf(buffer);
+  const width = MAX_WIDTH;
+  const height = Math.round((dimensions.height! / dimensions.width!) * MAX_WIDTH);
+  return [
+    new Paragraph({
+      children: [new ImageRun({ type: 'png', data: buffer, transformation: { width, height } })],
+      alignment: AlignmentType.LEFT,
+      spacing: { after: 100 },
+      keepNext: true,
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: caption, italics: true, size: 20 })],
+      spacing: { after: 300 },
+    }),
+  ];
+}
+
+const RESULT_COLOR: Record<CreationAttributeRow['result'], string | undefined> = {
+  match: '1A7F37',
+  mismatch: 'C00000',
+  skipped: '8A8A8A',
+  no_row: 'C00000',
+};
+
+const RESULT_LABEL: Record<CreationAttributeRow['result'], string> = {
+  match: 'MATCH',
+  mismatch: 'MISMATCH',
+  skipped: 'SKIPPED',
+  no_row: 'NO ROW',
+};
+
+function headerCell(text: string): TableCell {
+  return new TableCell({
+    width: { size: 25, type: WidthType.PERCENTAGE },
+    shading: { type: ShadingType.SOLID, color: '1F4E79', fill: '1F4E79' },
+    verticalAlign: VerticalAlign.CENTER,
+    children: [new Paragraph({ children: [new TextRun({ text, bold: true, color: 'FFFFFF' })] })],
+  });
+}
+
+function dataCell(text: string, color?: string, bold?: boolean): TableCell {
+  return new TableCell({
+    verticalAlign: VerticalAlign.CENTER,
+    children: [new Paragraph({ children: [new TextRun({ text, color, bold })] })],
+  });
+}
+
+/**
+ * Report for the identity-creation pipeline (tests/sql/create-and-insert-
+ * identity.spec.ts) — separate from buildReport() above, which is the
+ * multi-page documentation report for the existing (unmodified) UI-based
+ * regression suite. This one is purpose-built for two SSMS screenshots
+ * (INSERT, verification SELECT) plus an actual Word table of every
+ * generated field vs. what landed in the DB — not just images, per request,
+ * so the field-by-field result is readable as a table, not just a picture
+ * of one.
+ */
+export async function buildIdentityCreationReport(
+  metadata: CreationReportMetadata,
+  insertScreenshotPath: string,
+  selectScreenshotPath: string,
+  attributeRows: CreationAttributeRow[],
+  outputPath: string
+) {
+  const generatedTimestamp = new Date().toLocaleString('en-US', {
+    month: 'numeric', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true,
+  });
+
+  const children: (Paragraph | Table)[] = [
+    new Paragraph({
+      children: [new TextRun({ text: `${metadata.sourceName} — Identity Creation`, bold: true, size: 44 })],
+      spacing: { after: 200 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: 'Identity: ', bold: true }), new TextRun({ text: metadata.identityName })],
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: 'Stage Key: ', bold: true }), new TextRun({ text: metadata.stageKey })],
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: 'Lifecycle: ', bold: true }), new TextRun({ text: metadata.lifecycle })],
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: 'Generated: ', bold: true }), new TextRun({ text: generatedTimestamp })],
+      spacing: { after: 400 },
+    }),
+    new Paragraph({
+      text: '1. SSMS — INSERT',
+      heading: HeadingLevel.HEADING_1,
+      spacing: { before: 200, after: 200 },
+      keepNext: true,
+    }),
+    ...screenshotParagraph(insertScreenshotPath, 'Full SSMS window immediately after the INSERT executed.'),
+    new Paragraph({
+      text: '2. SSMS — Verification SELECT',
+      heading: HeadingLevel.HEADING_1,
+      spacing: { before: 300, after: 200 },
+      keepNext: true,
+    }),
+    ...screenshotParagraph(selectScreenshotPath, 'Full SSMS window showing the newly-inserted row.'),
+    new Paragraph({
+      text: '3. Generated Attributes',
+      heading: HeadingLevel.HEADING_1,
+      spacing: { before: 300, after: 150 },
+      keepNext: true,
+    }),
+    new Paragraph({
+      children: [
+        new TextRun({
+          text: 'Every generated field, compared against what was actually read back from My_Rush_Jobs after the INSERT:',
+          italics: true,
+        }),
+      ],
+      spacing: { after: 150 },
+    }),
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({
+          tableHeader: true,
+          children: [headerCell('Field'), headerCell('Generated Value'), headerCell('My_Rush_Jobs Value'), headerCell('Result')],
+        }),
+        ...attributeRows.map(
+          (row) =>
+            new TableRow({
+              children: [
+                dataCell(row.field),
+                dataCell(row.generatedValue),
+                dataCell(row.dbValue),
+                dataCell(RESULT_LABEL[row.result], RESULT_COLOR[row.result], row.result !== 'match' && row.result !== 'skipped'),
+              ],
+            })
+        ),
+      ],
+    }),
+  ];
+
+  const doc = new Document({ sections: [{ children }] });
+  const buffer = await Packer.toBuffer(doc);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, buffer);
+  console.log(`Creation report saved: ${outputPath}`);
 }
