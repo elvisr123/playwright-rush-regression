@@ -35,6 +35,21 @@ This took several iterations to get right — the failure modes were non-obvious
   page is "stuck" on a login screen.
 - If SharePoint upload starts failing again with the login page reappearing,
   suspect one of the above before assuming credentials are wrong.
+- **No timeout on the REST calls, fixed (2026-09-16)**: `uploadViaSharePointRest`'s
+  `context.request.get/post` calls (`_api/contextinfo`, folder list/create,
+  file add) had no `timeout` set. Confirmed live: one of these calls just
+  hung — no error, browser sat frozen on the folder page — until the window
+  was closed manually, at which point the pending request failed with
+  `"Target page, context or browser has been closed"`. That message is a
+  side effect of the manual close, not the actual cause; don't chase GoDaddy
+  bot-detection or session issues for *this* error shape specifically —
+  check whether the browser was actually frozen first. Fixed: every
+  `context.request.*` call in that function now has an explicit
+  `REST_TIMEOUT_MS` (20s), and the whole REST attempt is wrapped in a
+  try/catch that returns `false` (not throw) on timeout/any network error —
+  matters because `uploadAutomatically`'s retry loop only falls through to
+  the UI-based upload fallback when this returns `false`; an uncaught
+  exception would've skipped that fallback entirely.
 
 ## Screenshot capture (`tests/helpers/pageActions.ts`)
 

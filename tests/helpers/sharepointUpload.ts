@@ -198,6 +198,14 @@ async function tryCommandBarUpload(page: Page, root: Root, absoluteFilePath: str
   return false;
 }
 
+// None of the context.request.* calls below had an explicit timeout, so a
+// SharePoint REST call that never responds (rather than erroring cleanly)
+// hung indefinitely — confirmed live: the browser sat frozen on the folder
+// page with no visible error until it was closed manually, at which point
+// the pending request failed with "Target page, context or browser has
+// been closed" (a side effect of the manual close, not the actual cause).
+const REST_TIMEOUT_MS = 20_000;
+
 function joinServerRelativeFolder(baseFolder: string, subfolder?: string): string {
   if (!subfolder) return baseFolder;
   return `${baseFolder.replace(/\/+$/, '')}/${subfolder}`;
@@ -213,6 +221,7 @@ async function listChildFolders(
     `&@path='${parentFolder.replace(/'/g, "''")}'`;
   const res = await context.request.get(listUrl, {
     headers: { Accept: 'application/json;odata=verbose' },
+    timeout: REST_TIMEOUT_MS,
   });
   if (!res.ok()) {
     console.log(`SharePoint REST: could not list folders in ${parentFolder} (${res.status()})`);
@@ -254,6 +263,7 @@ async function ensureChildFolder(
       Accept: 'application/json;odata=verbose',
       'X-RequestDigest': digest,
     },
+    timeout: REST_TIMEOUT_MS,
   });
   if (!addRes.ok()) {
     const body = await addRes.text();
@@ -300,57 +310,74 @@ async function uploadViaSharePointRest(
   console.log(`SharePoint REST: site=${siteUrl}`);
   console.log(`SharePoint REST: parent=${parentFolder}`);
 
-  const digestRes = await context.request.post(`${siteUrl}/_api/contextinfo`, {
-    headers: { Accept: 'application/json;odata=verbose' },
-  });
-  if (!digestRes.ok()) {
-    console.log(`SharePoint REST: contextinfo failed (${digestRes.status()})`);
-    return false;
-  }
-  const digestJson = (await digestRes.json()) as {
-    d?: { GetContextWebInformation?: { FormDigestValue?: string } };
-  };
-  const digest = digestJson?.d?.GetContextWebInformation?.FormDigestValue;
-  if (!digest) {
-    console.log('SharePoint REST: no FormDigestValue returned');
-    return false;
-  }
-
-  let resolvedSubfolder = subfolder;
-  if (subfolder) {
-    resolvedSubfolder = await ensureChildFolder(context, siteUrl, parentFolder, subfolder, digest);
-  }
-  const folderServerRelativeUrl = joinServerRelativeFolder(parentFolder, resolvedSubfolder);
-  console.log(`SharePoint REST: folder=${folderServerRelativeUrl}`);
-
-  // Never overwrite an existing library file — add only. Caller retries with a
-  // unique name if SharePoint reports a collision.
-  const addUrl =
-    `${siteUrl}/_api/web/GetFolderByServerRelativeUrl(@path)/Files/add(url=@filename,overwrite=false)` +
-    `?@path='${folderServerRelativeUrl.replace(/'/g, "''")}'` +
-    `&@filename='${remoteFileName.replace(/'/g, "''")}'`;
-
-  const fileBuffer = fs.readFileSync(absoluteFilePath);
-  const putRes = await context.request.post(addUrl, {
-    headers: {
-      Accept: 'application/json;odata=verbose',
-      'X-RequestDigest': digest,
-    },
-    data: fileBuffer,
-  });
-
-  if (!putRes.ok()) {
-    const body = await putRes.text();
-    if (putRes.status() === 409 || /already exists|name already/i.test(body)) {
-      console.log(`SharePoint REST: "${remoteFileName}" already exists — will upload under a new name.`);
-      return 'exists';
+  // Everything below is a real network call — wrapped so a timeout (or any
+  // other network-level failure) returns false, same as the checks above,
+  // instead of throwing uncaught. That matters here specifically: the
+  // caller's retry loop in uploadAutomatically() only falls through to the
+  // UI-based upload fallback when this returns false — an uncaught
+  // exception would skip that fallback entirely. Confirmed live: these
+  // calls previously had no timeout at all, so a REST endpoint that never
+  // responds hung indefinitely with no visible error until the browser was
+  // closed manually.
+  try {
+    const digestRes = await context.request.post(`${siteUrl}/_api/contextinfo`, {
+      headers: { Accept: 'application/json;odata=verbose' },
+      timeout: REST_TIMEOUT_MS,
+    });
+    if (!digestRes.ok()) {
+      console.log(`SharePoint REST: contextinfo failed (${digestRes.status()})`);
+      return false;
     }
-    console.log(`SharePoint REST upload failed (${putRes.status()}): ${body}`);
+    const digestJson = (await digestRes.json()) as {
+      d?: { GetContextWebInformation?: { FormDigestValue?: string } };
+    };
+    const digest = digestJson?.d?.GetContextWebInformation?.FormDigestValue;
+    if (!digest) {
+      console.log('SharePoint REST: no FormDigestValue returned');
+      return false;
+    }
+
+    let resolvedSubfolder = subfolder;
+    if (subfolder) {
+      resolvedSubfolder = await ensureChildFolder(context, siteUrl, parentFolder, subfolder, digest);
+    }
+    const folderServerRelativeUrl = joinServerRelativeFolder(parentFolder, resolvedSubfolder);
+    console.log(`SharePoint REST: folder=${folderServerRelativeUrl}`);
+
+    // Never overwrite an existing library file — add only. Caller retries with a
+    // unique name if SharePoint reports a collision.
+    const addUrl =
+      `${siteUrl}/_api/web/GetFolderByServerRelativeUrl(@path)/Files/add(url=@filename,overwrite=false)` +
+      `?@path='${folderServerRelativeUrl.replace(/'/g, "''")}'` +
+      `&@filename='${remoteFileName.replace(/'/g, "''")}'`;
+
+    const fileBuffer = fs.readFileSync(absoluteFilePath);
+    const putRes = await context.request.post(addUrl, {
+      headers: {
+        Accept: 'application/json;odata=verbose',
+        'X-RequestDigest': digest,
+      },
+      data: fileBuffer,
+      timeout: REST_TIMEOUT_MS,
+    });
+
+    if (!putRes.ok()) {
+      const body = await putRes.text();
+      if (putRes.status() === 409 || /already exists|name already/i.test(body)) {
+        console.log(`SharePoint REST: "${remoteFileName}" already exists — will upload under a new name.`);
+        return 'exists';
+      }
+      console.log(`SharePoint REST upload failed (${putRes.status()}): ${body}`);
+      return false;
+    }
+
+    console.log(`SharePoint REST: uploaded "${remoteFileName}" successfully.`);
+    return true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.log(`SharePoint REST: network call failed or timed out (${message}) — falling back to UI upload.`);
     return false;
   }
-
-  console.log(`SharePoint REST: uploaded "${remoteFileName}" successfully.`);
-  return true;
 }
 
 async function uploadViaSharePointUi(page: Page, absoluteFilePath: string, fileName: string) {
