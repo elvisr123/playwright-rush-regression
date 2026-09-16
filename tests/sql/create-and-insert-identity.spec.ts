@@ -35,7 +35,7 @@ import { LifecycleState } from '../config/lifecycles';
 //
 // Hand-edit these, same convention as every other spec in this repo:
 const SOURCES_TO_CREATE = ['workday']; // source keys from identity-factory/user_payload.py's SOURCES — only 'copley' and 'workday' have a real attribute template so far.
-const LIFECYCLE: LifecycleState = 'futurehire';
+const LIFECYCLE: LifecycleState = 'processing';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
 // Dedicated SharePoint folder for identity-creation evidence, already
