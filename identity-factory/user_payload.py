@@ -17,7 +17,7 @@ from source_templates import structural_fields
 INITIALS = os.environ.get("CREATOR_INITIALS", "AA").upper()
 SLOT = "000"
 
-LIFECYCLES = ("futurehire", "prehire", "active", "termed", "inactive", "rehire")
+LIFECYCLES = ("futurehire", "prehire", "active", "termed", "inactive", "rehire", "processing")
 
 SOURCES = {
     "copley": {"name": "Copley Lawson", "prefix": "CL"},
@@ -108,6 +108,10 @@ def lifecycle_dates(lifecycle: str) -> dict:
         start, end, disabled, status = today - timedelta(days=180), today - timedelta(days=30), True, "Disabled"
     elif lifecycle == "rehire":
         start, end, disabled, status = today, today + timedelta(days=180), False, "Active"
+    elif lifecycle == "processing":
+        # Same date/status logic as "active" - the only difference for this
+        # state is Primary_Position="NO", applied in build_my_rush_jobs_row.
+        start, end, disabled, status = today - timedelta(days=1), today + timedelta(days=180), False, "Active"
     else:
         raise SystemExit(f"Unknown lifecycle: {lifecycle}")
     return {
@@ -179,6 +183,12 @@ def build_my_rush_jobs_row(source_key: str, key: str, number: str, first: str, l
         "Legal_Hold": None,
     }
     row = {**scaffold, **structural_fields(source_key)}
+    if lifecycle == "processing":
+        # Lifecycle-driven override: every source's template sets
+        # Primary_Position="YES" as a structural constant, but "processing"
+        # identities are always "NO" regardless of source - applied after
+        # the structural merge so it takes precedence over the template.
+        row["Primary_Position"] = "NO"
     missing = [c for c in MY_RUSH_JOBS_COLUMNS if c not in row]
     if missing:
         raise AssertionError(f"Source \"{source_key}\" template is missing columns: {missing}")
