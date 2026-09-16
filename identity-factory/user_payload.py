@@ -8,14 +8,12 @@ from __future__ import annotations
 
 import os
 import random
-import time
 from datetime import date, timedelta
 
 from name_generator import unused_person_name
 from source_templates import structural_fields
 
 INITIALS = os.environ.get("CREATOR_INITIALS", "AA").upper()
-SLOT = "000"
 
 LIFECYCLES = ("futurehire", "prehire", "active", "termed", "inactive", "rehire", "processing")
 
@@ -124,8 +122,9 @@ def lifecycle_dates(lifecycle: str) -> dict:
 
 
 def unique_id() -> str:
-    """yyMMdd + 4 random digits so many identities can be created the same day."""
-    return time.strftime("%y%m%d") + f"{random.randint(0, 9999):04d}"
+    """7 random digits - the number segment embedded in stage_key(), and also
+    the basis for User_ID/Provider_National_ID/Correlation_Key derivation."""
+    return f"{random.randint(0, 9999999):07d}"
 
 
 def random_person_name() -> tuple[str, str]:
@@ -134,7 +133,11 @@ def random_person_name() -> tuple[str, str]:
 
 
 def stage_key(prefix: str, number: str) -> str:
-    return f"{prefix}-{number}TESTCL{SLOT}{INITIALS}"
+    # e.g. WD-951234567ER for prefix "WD" and number "1234567" - user-specified
+    # format: <source prefix>-95<7 random digits>ER. Uniqueness is enforced by
+    # the caller retrying unique_id() against excel_store.used_stage_keys()
+    # (see generate_identity.py's allocate_number), not by this function.
+    return f"{prefix}-95{number}ER"
 
 
 def build_my_rush_jobs_row(source_key: str, key: str, number: str, first: str, last: str, lifecycle: str) -> dict:

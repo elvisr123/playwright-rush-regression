@@ -6,7 +6,7 @@ import { runGenerator } from '../helpers/generatorClient';
 import { getStagingRow } from '../helpers/dbClient';
 import { evaluateCheck } from '../helpers/expectedValueCheck';
 import { buildIdentityCreationReport, CreationAttributeRow } from '../helpers/buildReport';
-import { buildReportFileName } from '../helpers/sharepointUpload';
+import { buildReportFileName, uploadFileToSharePointFolder, removeLocalReportCopy } from '../helpers/sharepointUpload';
 import { LifecycleState } from '../config/lifecycles';
 
 // Creates a brand-new synthetic My_Rush_Jobs identity and INSERTs it via
@@ -22,7 +22,11 @@ import { LifecycleState } from '../config/lifecycles';
 // .docx, via buildIdentityCreationReport in tests/helpers/buildReport.ts):
 // the full SSMS window right after the INSERT, the full SSMS window showing
 // the verification SELECT, and a table of every generated field vs. what
-// was actually read back from the DB.
+// was actually read back from the DB. Each report is then uploaded to the
+// SHAREPOINT_CREATION_SUBFOLDER below via the same uploadFileToSharePointFolder
+// (tests/helpers/sharepointUpload.ts) the main documentation pipeline already
+// uses — this spawns its own separate Chrome/SSO session internally, so it
+// works fine from this browserless sql-tools test.
 //
 // Windows-only, same precondition as ssms-my-rush-jobs.spec.ts: SSMS itself
 // only runs on Windows, and must already be open and connected (see
@@ -30,9 +34,13 @@ import { LifecycleState } from '../config/lifecycles';
 //
 // Hand-edit these, same convention as every other spec in this repo:
 const SOURCES_TO_CREATE = ['workday']; // source keys from identity-factory/user_payload.py's SOURCES — only 'copley' and 'workday' have a real attribute template so far.
-const LIFECYCLE: LifecycleState = 'active';
+const LIFECYCLE: LifecycleState = 'prehire';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
+// Dedicated SharePoint subfolder for identity-creation evidence (separate
+// from the main documentation pipeline's per-source Copley/Rush/NERM
+// folders) — created by request, lives under the same SHAREPOINT_FOLDER_URL.
+const SHAREPOINT_CREATION_SUBFOLDER = 'VDI_Automation_Evidence';
 
 // Runs one query through ssms-capture.ps1 and returns the screenshot path —
 // same query-via-temp-file mechanism as ssms-my-rush-jobs.spec.ts (avoids
@@ -67,8 +75,11 @@ test('Create identity — INSERT + verify via SSMS', async () => {
   test.skip(process.platform !== 'win32', 'SSMS automation only runs on Windows — run this from inside the VDI.');
   // Default Playwright test timeout is 30s — nowhere near enough for a
   // multi-minute SendKeys typing session per row (see runSsmsCapture's own
-  // 180s timeout, which can run twice per row: INSERT + verification SELECT).
-  test.setTimeout(300_000);
+  // 180s timeout, which can run twice per row: INSERT + verification SELECT),
+  // plus the SharePoint upload step, which can require a one-time manual SSO
+  // sign-in (see AGENTS.md / sharepointUpload.ts). 600s matches the same
+  // RUN_TIMEOUT_MS the main documentation pipeline uses for this reason.
+  test.setTimeout(600_000);
 
   const outDir = path.resolve('temp');
   fs.mkdirSync(outDir, { recursive: true });
@@ -146,6 +157,20 @@ test('Create identity — INSERT + verify via SSMS', async () => {
       attributeRows,
       reportPath
     );
+
+    console.log(`Uploading creation report to SharePoint (${SHAREPOINT_CREATION_SUBFOLDER})...`);
+    const published = await uploadFileToSharePointFolder(
+      reportPath,
+      path.basename(reportPath),
+      undefined,
+      undefined,
+      SHAREPOINT_CREATION_SUBFOLDER
+    );
+    if (published) {
+      removeLocalReportCopy(reportPath);
+    } else {
+      console.log(`SharePoint publish skipped — staging file kept at ${reportPath}`);
+    }
 
     anyFailed = anyFailed || rowFailed;
     verifiedRows.push({
