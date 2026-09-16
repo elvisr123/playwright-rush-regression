@@ -22,11 +22,12 @@ import { LifecycleState } from '../config/lifecycles';
 // .docx, via buildIdentityCreationReport in tests/helpers/buildReport.ts):
 // the full SSMS window right after the INSERT, the full SSMS window showing
 // the verification SELECT, and a table of every generated field vs. what
-// was actually read back from the DB. Each report is then uploaded to the
-// SHAREPOINT_CREATION_SUBFOLDER below via the same uploadFileToSharePointFolder
-// (tests/helpers/sharepointUpload.ts) the main documentation pipeline already
-// uses — this spawns its own separate Chrome/SSO session internally, so it
-// works fine from this browserless sql-tools test.
+// was actually read back from the DB. Each report is then uploaded directly
+// into VDI_AUTOMATION_EVIDENCE_FOLDER_URL below via the same
+// uploadFileToSharePointFolder (tests/helpers/sharepointUpload.ts) the main
+// documentation pipeline already uses — this spawns its own separate
+// Chrome/SSO session internally, so it works fine from this browserless
+// sql-tools test.
 //
 // Windows-only, same precondition as ssms-my-rush-jobs.spec.ts: SSMS itself
 // only runs on Windows, and must already be open and connected (see
@@ -34,13 +35,16 @@ import { LifecycleState } from '../config/lifecycles';
 //
 // Hand-edit these, same convention as every other spec in this repo:
 const SOURCES_TO_CREATE = ['workday']; // source keys from identity-factory/user_payload.py's SOURCES — only 'copley' and 'workday' have a real attribute template so far.
-const LIFECYCLE: LifecycleState = 'prehire';
+const LIFECYCLE: LifecycleState = 'futurehire';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
-// Dedicated SharePoint subfolder for identity-creation evidence (separate
-// from the main documentation pipeline's per-source Copley/Rush/NERM
-// folders) — created by request, lives under the same SHAREPOINT_FOLDER_URL.
-const SHAREPOINT_CREATION_SUBFOLDER = 'VDI_Automation_Evidence';
+// Dedicated SharePoint folder for identity-creation evidence, already
+// created by a teammate — a SIBLING of testplaywright_testcases under
+// Rush_TestCases, not a child of it, so this is its own direct sharing URL
+// rather than a subfolder name under the default SHAREPOINT_FOLDER_URL.
+// Upload goes straight into this folder — no subfolder is created inside it.
+const VDI_AUTOMATION_EVIDENCE_FOLDER_URL =
+  'https://netorgft1314491.sharepoint.com/:f:/s/AsbRushISC/IgCaiDn8JnZXRJHaP0WojAT4AUK0-wlDMgOshHbceu8ivy8?e=V6MMsT';
 
 // Runs one query through ssms-capture.ps1 and returns the screenshot path —
 // same query-via-temp-file mechanism as ssms-my-rush-jobs.spec.ts (avoids
@@ -158,13 +162,12 @@ test('Create identity — INSERT + verify via SSMS', async () => {
       reportPath
     );
 
-    console.log(`Uploading creation report to SharePoint (${SHAREPOINT_CREATION_SUBFOLDER})...`);
+    console.log('Uploading creation report to SharePoint (VDI_Automation_Evidence)...');
     const published = await uploadFileToSharePointFolder(
       reportPath,
       path.basename(reportPath),
-      undefined,
-      undefined,
-      SHAREPOINT_CREATION_SUBFOLDER
+      VDI_AUTOMATION_EVIDENCE_FOLDER_URL
+      // No syncDir/subfolder — upload goes straight into this folder itself.
     );
     if (published) {
       removeLocalReportCopy(reportPath);
