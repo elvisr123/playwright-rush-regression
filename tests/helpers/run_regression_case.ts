@@ -14,7 +14,7 @@ import {
   getAllAccountSourceNames,
   highlightExactTexts,
 } from './screenshotEvidence';
-import { buildReport } from './buildReport';
+import { buildReport, buildCombinedReport, CreationEvidenceEntry } from './buildReport';
 import {
   captureSection,
   capturePaginatedSection,
@@ -32,6 +32,7 @@ import {
   buildReportFileName,
   localReportPath,
   uploadReportForSource,
+  uploadFileToSharePointFolder,
   removeLocalReportCopy,
 } from './sharepointUpload';
 
@@ -360,7 +361,12 @@ async function captureDbCheckEvidence(
  * its report. Called from tests/sources/<source>/<lifecycle>.spec.ts
  * (Copley Lawson, then RUSH Lawson) and from rush_regression.spec.ts for leftover multi-source cases.
  */
-export async function runRegressionCase(page: Page, testCase: TestCase) {
+export async function runRegressionCase(
+  page: Page,
+  testCase: TestCase,
+  creationEvidenceEntries?: CreationEvidenceEntry[],
+  uploadFolderUrl?: string
+) {
   await page.setViewportSize({ width: 1600, height: 2000 });
 
   const primary = testCase.sources[0];
@@ -685,23 +691,48 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
   const reportFileName = buildReportFileName(identityName);
   const reportPath = localReportPath(reportFileName);
 
-  await buildReport(
-    {
-      sourceLabel: allSourceNames.join(' & '),
-      identityName,
-      caseId: testCase.sources.map((s) => s.stageKey).join(' / '),
-    },
-    sections,
-    reportPath,
-    checkedSummary,
-    blankFields,
-    correlationMismatches,
-    valueAssertions,
-    dbCheckEnabled ? databaseChecks : undefined
-  );
+  const reportMetadata = {
+    sourceLabel: allSourceNames.join(' & '),
+    identityName,
+    caseId: testCase.sources.map((s) => s.stageKey).join(' / '),
+  };
+  // Only tests/creation/aggregate-and-document.spec.ts passes
+  // creationEvidenceEntries — every other caller (tests/sources/**,
+  // rush_regression.spec.ts) omits it, so this branch never changes their
+  // behavior; they keep calling buildReport() exactly as before.
+  if (creationEvidenceEntries && creationEvidenceEntries.length > 0) {
+    await buildCombinedReport(
+      reportMetadata,
+      creationEvidenceEntries,
+      sections,
+      reportPath,
+      checkedSummary,
+      blankFields,
+      correlationMismatches,
+      valueAssertions,
+      dbCheckEnabled ? databaseChecks : undefined
+    );
+  } else {
+    await buildReport(
+      reportMetadata,
+      sections,
+      reportPath,
+      checkedSummary,
+      blankFields,
+      correlationMismatches,
+      valueAssertions,
+      dbCheckEnabled ? databaseChecks : undefined
+    );
+  }
 
   // Destination is SharePoint. Stage locally → upload → delete local staging copy.
-  const published = await uploadReportForSource(reportPath, reportFileName, primary.name);
+  // A caller-provided uploadFolderUrl (only tests/creation/aggregate-and-
+  // document.spec.ts passes one, for the combined report's own dedicated
+  // folder) bypasses uploadReportForSource's normal per-source routing —
+  // every other caller omits it and keeps that routing unchanged.
+  const published = uploadFolderUrl
+    ? await uploadFileToSharePointFolder(reportPath, reportFileName, uploadFolderUrl)
+    : await uploadReportForSource(reportPath, reportFileName, primary.name);
   if (published) {
     removeLocalReportCopy(reportPath);
   } else {

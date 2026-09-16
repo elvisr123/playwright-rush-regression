@@ -93,7 +93,19 @@ test('Create identity — INSERT + verify via SSMS', async () => {
   console.log(`Generated: ${generated.firstName} ${generated.lastName} (${generated.rows.length} row(s))`);
 
   let anyFailed = false;
-  const verifiedRows: { sourceKey: string; sourceName: string; stageKey: string; dbVerified: boolean }[] = [];
+  // insertScreenshotPath/selectScreenshotPath/attributeRows are carried here
+  // so tests/creation/aggregate-and-document.spec.ts (run after manual
+  // aggregation) can re-render this same creation evidence into the combined
+  // report without re-deriving or re-running anything.
+  const verifiedRows: {
+    sourceKey: string;
+    sourceName: string;
+    stageKey: string;
+    dbVerified: boolean;
+    insertScreenshotPath: string;
+    selectScreenshotPath: string;
+    attributeRows: CreationAttributeRow[];
+  }[] = [];
 
   // Sequential, not parallel — scripts/ssms-capture.ps1 drives one live SSMS
   // window; concurrent SendKeys streams into the same window would race.
@@ -181,6 +193,9 @@ test('Create identity — INSERT + verify via SSMS', async () => {
       sourceName: row.sourceName,
       stageKey: row.stageKey,
       dbVerified: !rowFailed,
+      insertScreenshotPath: insertScreenshot,
+      selectScreenshotPath: selectScreenshot,
+      attributeRows,
     });
   }
 
