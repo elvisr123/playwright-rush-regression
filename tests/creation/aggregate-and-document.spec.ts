@@ -27,6 +27,12 @@ import { CreationEvidenceEntry, CreationAttributeRow } from '../helpers/buildRep
 // filename it wrote.
 const LABEL = 'PASTE_LABEL_HERE';
 
+// create-and-insert-identity.spec.ts writes the handoff JSON to temp/, but
+// that's not durable storage — if you've moved pending_aggregation_*.json
+// files elsewhere (e.g. a OneDrive/SharePoint-synced folder) to keep them
+// around, point this at that folder instead. Leave as 'temp' otherwise.
+const HANDOFF_DIR = 'temp';
+
 // New, dedicated SharePoint folder for combined creation+documentation
 // reports — separate from both the main documentation pipeline's per-source
 // folders and the creation-only VDI_Automation_Evidence folder.
@@ -51,7 +57,7 @@ interface PendingAggregation {
 }
 
 test('Document a created identity — combined creation + sandbox report', async ({ page }) => {
-  const handoffPath = path.resolve('temp', `pending_aggregation_${LABEL}.json`);
+  const handoffPath = path.resolve(HANDOFF_DIR, `pending_aggregation_${LABEL}.json`);
   test.skip(
     LABEL === 'PASTE_LABEL_HERE' || !fs.existsSync(handoffPath),
     `Set LABEL at the top of this file to a real pending_aggregation_<label>.json (looked for ${handoffPath}).`

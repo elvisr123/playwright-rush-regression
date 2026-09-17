@@ -5,6 +5,7 @@ export const SOURCES = {
   echo: 'ECHO Credentialed Providers',
   ellucian: 'Ellucian Students',
   nerm: 'Non-Employee Workforce',
+  workday: 'Rush Workday',
 } as const;
 
 export type SourceKey = keyof typeof SOURCES;
