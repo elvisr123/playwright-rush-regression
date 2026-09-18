@@ -21,9 +21,19 @@ created Workday-only earlier and now also needs a Copley account), pass
 (the digits between "-95" and "ER", e.g. "5763119" from WD-955763119ER)
 plus their exact --first/--last, and --sources with only the NEW source(s)
 — this reuses that number instead of allocating a fresh one, so the new
-row's User_ID/Correlation_Key line up with the existing account(s) once
-aggregated:
-  python generate_identity.py --sources copley --lifecycle active --first Pablo --last Foster --number 5763119
+row's User_ID lines up with the existing account(s).
+
+IMPORTANT — Correlation_Key must be byte-for-byte identical across every
+source's row for the same identity, confirmed against a real manually
+correlated identity (Non-Employee Workforce + Copley Lawson: identical
+Correlation_Key, different Stage_Key). New identities get this for free —
+the default Correlation_Key is derived only from --number, so it's already
+the same for every --sources value in one run. But an identity created
+BEFORE this default existed has its own Correlation_Key already stored in
+the DB (visible on its account/identity in the SailPoint UI, or via a
+SELECT) that this script cannot re-derive on its own — pass it explicitly
+with --correlation-key so the new source's row matches it exactly:
+  python generate_identity.py --sources copley --lifecycle active --first Pablo --last Foster --number 5763119 --correlation-key "763119-WD-955763119ER"
 """
 
 from __future__ import annotations
@@ -104,6 +114,17 @@ def main() -> None:
             "source in --sources for this run."
         ),
     )
+    parser.add_argument(
+        "--correlation-key", default=None, dest="correlation_key",
+        help=(
+            "Reuse this exact Correlation_Key instead of the default "
+            "(derived from --number) — required when adding a source to an "
+            "identity created before this default existed, so the new "
+            "row's Correlation_Key matches what's already stored for that "
+            "identity's other source(s). Paste the exact value from the "
+            "existing account/identity in the SailPoint UI or a DB SELECT."
+        ),
+    )
     args = parser.parse_args()
 
     if args.number and not (args.first and args.last):
@@ -134,7 +155,9 @@ def main() -> None:
     for source_key in args.sources:
         cfg = SOURCES[source_key]
         key = stage_key(cfg["prefix"], number)
-        row = build_my_rush_jobs_row(source_key, key, number, first, last, args.lifecycle, birth_date)
+        row = build_my_rush_jobs_row(
+            source_key, key, number, first, last, args.lifecycle, birth_date, args.correlation_key
+        )
         save_row(row)
         append_identity(args.lifecycle, row)
         rows.append(

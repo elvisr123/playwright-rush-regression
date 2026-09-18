@@ -35,6 +35,14 @@ export interface GenerateOptions {
    * Birth_Date exactly.
    */
   birthDate?: string;
+  /**
+   * Reuse this exact Correlation_Key instead of the default (derived from
+   * `number`) — required when adding a source to an identity created
+   * before that default existed, so the new row's Correlation_Key matches
+   * what's already stored for that identity's other source(s). Paste the
+   * exact value from the existing account/identity in the SailPoint UI.
+   */
+  correlationKey?: string;
 }
 
 /**
@@ -59,6 +67,7 @@ export function runGenerator(
   if (opts.out) args.push('--out', opts.out);
   if (opts.number) args.push('--number', opts.number);
   if (opts.birthDate) args.push('--birth-date', opts.birthDate);
+  if (opts.correlationKey) args.push('--correlation-key', opts.correlationKey);
 
   let stdout: string;
   try {

@@ -154,7 +154,14 @@ def stage_key(prefix: str, number: str) -> str:
 
 
 def build_my_rush_jobs_row(
-    source_key: str, key: str, number: str, first: str, last: str, lifecycle: str, birth_date: str | None = None
+    source_key: str,
+    key: str,
+    number: str,
+    first: str,
+    last: str,
+    lifecycle: str,
+    birth_date: str | None = None,
+    correlation_key: str | None = None,
 ) -> dict:
     """One fully populated My_Rush_Jobs row: identity scaffold (this
     function — name/date/generated-ID fields, the same for every source)
@@ -165,7 +172,17 @@ def build_my_rush_jobs_row(
     birth_date must be generated ONCE per identity and passed in explicitly
     by multi-source callers (generate_identity.py) — calling this per source
     with birth_date=None would give each source's row a different random
-    Birth_Date for the same person, breaking cross-source consistency."""
+    Birth_Date for the same person, breaking cross-source consistency.
+
+    Correlation_Key must likewise be identical across every source's row for
+    the same identity — confirmed against a real, manually-correlated
+    multi-source identity (Non-Employee Workforce + Copley Lawson) where the
+    two accounts' Correlation_Key values were byte-for-byte identical despite
+    different Stage_Keys. The default below (derived only from `number`, the
+    value already shared across sources by the caller) is correlation-safe
+    on its own; pass correlation_key explicitly only to match an *existing*
+    identity's already-stored value verbatim (e.g. adding a source to an
+    identity created before this default existed)."""
     given = f"{first}{INITIALS}"
     display = f"{given} {last}"
     dates = lifecycle_dates(lifecycle)
@@ -173,7 +190,7 @@ def build_my_rush_jobs_row(
     email = f"{given}{last}@gmail.com"
     scaffold = {
         "Stage_Key": key,
-        "Correlation_Key": f"{user_id}-{key}",
+        "Correlation_Key": correlation_key or f"{user_id}-{number}",
         "Username": display,
         "Work_Email": email,
         "User_ID": user_id,

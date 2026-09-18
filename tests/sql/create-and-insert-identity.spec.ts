@@ -44,11 +44,24 @@ const LAST: string | undefined = undefined;
 // existing Stage_Key (the digits between "-95" and "ER", e.g. "5763119" from
 // WD-955763119ER), and BIRTH_DATE to their existing Birth_Date — then set
 // SOURCES_TO_CREATE to ONLY the new source(s). This reuses that identity's
-// number/Birth_Date instead of generating new ones, so the new row
-// correlates with the existing account(s) once aggregated. Leave both
-// undefined for a normal brand-new identity.
+// number/Birth_Date instead of generating new ones, so the new row's
+// User_ID lines up with the existing account(s). Leave all three undefined
+// for a normal brand-new identity.
+//
+// CORRELATION_KEY is also required for this add-a-source case: SailPoint
+// correlates accounts into one identity by an EXACT match of Correlation_Key
+// (confirmed live — a real multi-source identity had byte-for-byte identical
+// Correlation_Key values across sources despite different Stage_Keys), and
+// an identity created before this field was auto-derived has its own
+// already-stored value this script cannot re-derive. Paste it exactly from
+// that identity's existing account in the SailPoint UI (Attributes >
+// Correlation_Key) or a DB SELECT. A fresh multi-source identity (NUMBER
+// left undefined) doesn't need this — Correlation_Key is auto-derived from
+// the freshly allocated number and is already identical across every source
+// in SOURCES_TO_CREATE for that one run.
 const NUMBER: string | undefined = undefined;
 const BIRTH_DATE: string | undefined = undefined; // 'YYYY-MM-DD'
+const CORRELATION_KEY: string | undefined = undefined;
 // Dedicated SharePoint folder for identity-creation evidence, already
 // created by a teammate — a SIBLING of testplaywright_testcases under
 // Rush_TestCases, not a child of it, so this is its own direct sharing URL
@@ -105,6 +118,7 @@ test('Create identity — INSERT + verify via SSMS', async () => {
     last: LAST,
     number: NUMBER,
     birthDate: BIRTH_DATE,
+    correlationKey: CORRELATION_KEY,
   });
   console.log(`Generated: ${generated.firstName} ${generated.lastName} (${generated.rows.length} row(s))`);
 
