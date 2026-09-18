@@ -127,6 +127,19 @@ def unique_id() -> str:
     return f"{random.randint(0, 9999999):07d}"
 
 
+# Per user request (2026-09-18): random instead of the old fixed 1998-05-10,
+# but capped at end-of-2002 ("at least 2002 and before" - i.e. born in 2002
+# or earlier). Floor of 1965 is this repo's own assumption, not specified by
+# the user - adjust here if a different minimum age/floor year is needed.
+BIRTH_DATE_EARLIEST = date(1965, 1, 1)
+BIRTH_DATE_LATEST = date(2002, 12, 31)
+
+
+def random_birth_date() -> str:
+    span_days = (BIRTH_DATE_LATEST - BIRTH_DATE_EARLIEST).days
+    return (BIRTH_DATE_EARLIEST + timedelta(days=random.randint(0, span_days))).isoformat()
+
+
 def random_person_name() -> tuple[str, str]:
     """New first + last every call. Initials AA are applied later on Given_Name / Display_Name."""
     return unused_person_name(set())
@@ -140,12 +153,19 @@ def stage_key(prefix: str, number: str) -> str:
     return f"{prefix}-95{number}ER"
 
 
-def build_my_rush_jobs_row(source_key: str, key: str, number: str, first: str, last: str, lifecycle: str) -> dict:
+def build_my_rush_jobs_row(
+    source_key: str, key: str, number: str, first: str, last: str, lifecycle: str, birth_date: str | None = None
+) -> dict:
     """One fully populated My_Rush_Jobs row: identity scaffold (this
     function — name/date/generated-ID fields, the same for every source)
     merged with the source's structural template (source_templates.py —
     department/manager/location/job-code fields, constant per source).
-    Same shape as the VDI INSERT."""
+    Same shape as the VDI INSERT.
+
+    birth_date must be generated ONCE per identity and passed in explicitly
+    by multi-source callers (generate_identity.py) — calling this per source
+    with birth_date=None would give each source's row a different random
+    Birth_Date for the same person, breaking cross-source consistency."""
     given = f"{first}{INITIALS}"
     display = f"{given} {last}"
     dates = lifecycle_dates(lifecycle)
@@ -169,7 +189,7 @@ def build_my_rush_jobs_row(source_key: str, key: str, number: str, first: str, l
         "Preferred_Name": None,
         "Display_Name": display,
         "Nerm_Displayname": None,
-        "Birth_Date": "1998-05-10",
+        "Birth_Date": birth_date or random_birth_date(),
         "Last_4_SSN": "0006",
         "Original_Start_Date": dates["Original_Start_Date"],
         "Preferred_Language": None,

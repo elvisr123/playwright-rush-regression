@@ -22,6 +22,19 @@ export interface GenerateOptions {
   last?: string;
   /** Also write the handoff JSON here (in addition to stdout). */
   out?: string;
+  /**
+   * Reuse this 7-digit number (from an existing Stage_Key, e.g. "5763119"
+   * from WD-955763119ER) instead of allocating a new one — use this to add
+   * another source to an identity that already exists elsewhere, so the
+   * new row correlates with it. Requires first/last to match that identity.
+   */
+  number?: string;
+  /**
+   * Reuse this exact Birth_Date (YYYY-MM-DD) instead of a random one — pair
+   * with `number` so a new source's row matches an existing identity's
+   * Birth_Date exactly.
+   */
+  birthDate?: string;
 }
 
 /**
@@ -44,6 +57,8 @@ export function runGenerator(
   if (opts.first) args.push('--first', opts.first);
   if (opts.last) args.push('--last', opts.last);
   if (opts.out) args.push('--out', opts.out);
+  if (opts.number) args.push('--number', opts.number);
+  if (opts.birthDate) args.push('--birth-date', opts.birthDate);
 
   let stdout: string;
   try {

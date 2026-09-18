@@ -38,6 +38,17 @@ const SOURCES_TO_CREATE = ['workday']; // source keys from identity-factory/user
 const LIFECYCLE: LifecycleState = 'active';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
+// To add another source to an identity that already exists (e.g. someone
+// created Workday-only earlier and now also needs a Copley account): set
+// FIRST/LAST to their exact name, NUMBER to the 7 digits embedded in their
+// existing Stage_Key (the digits between "-95" and "ER", e.g. "5763119" from
+// WD-955763119ER), and BIRTH_DATE to their existing Birth_Date — then set
+// SOURCES_TO_CREATE to ONLY the new source(s). This reuses that identity's
+// number/Birth_Date instead of generating new ones, so the new row
+// correlates with the existing account(s) once aggregated. Leave both
+// undefined for a normal brand-new identity.
+const NUMBER: string | undefined = undefined;
+const BIRTH_DATE: string | undefined = undefined; // 'YYYY-MM-DD'
 // Dedicated SharePoint folder for identity-creation evidence, already
 // created by a teammate — a SIBLING of testplaywright_testcases under
 // Rush_TestCases, not a child of it, so this is its own direct sharing URL
@@ -89,7 +100,12 @@ test('Create identity — INSERT + verify via SSMS', async () => {
   fs.mkdirSync(outDir, { recursive: true });
 
   console.log(`Generating identity: sources=${SOURCES_TO_CREATE.join(',')} lifecycle=${LIFECYCLE}...`);
-  const generated = runGenerator(SOURCES_TO_CREATE, LIFECYCLE, { first: FIRST, last: LAST });
+  const generated = runGenerator(SOURCES_TO_CREATE, LIFECYCLE, {
+    first: FIRST,
+    last: LAST,
+    number: NUMBER,
+    birthDate: BIRTH_DATE,
+  });
   console.log(`Generated: ${generated.firstName} ${generated.lastName} (${generated.rows.length} row(s))`);
 
   let anyFailed = false;
@@ -212,10 +228,36 @@ test('Create identity — INSERT + verify via SSMS', async () => {
 
   const label = `${generated.firstName}_${generated.lastName}_${generated.lifecycle}`.replace(/\s+/g, '_');
   const handoffPath = path.join(outDir, `pending_aggregation_${label}.json`);
+
+  // Merge into an existing handoff file for this person rather than
+  // overwriting it — matters when adding another source (e.g. Copley) to an
+  // identity that already has a handoff JSON from an earlier, different
+  // SOURCES_TO_CREATE run (e.g. Workday-only); a plain overwrite would lose
+  // that source's screenshots/attributeRows. Same source re-run replaces its
+  // own row (matched by stageKey) rather than duplicating it.
+  let mergedRows = verifiedRows;
+  if (fs.existsSync(handoffPath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(handoffPath, 'utf8')) as { rows?: typeof verifiedRows };
+      const newStageKeys = new Set(verifiedRows.map((r) => r.stageKey));
+      const keptFromExisting = (existing.rows || []).filter((r) => !newStageKeys.has(r.stageKey));
+      mergedRows = [...keptFromExisting, ...verifiedRows];
+      if (keptFromExisting.length > 0) {
+        console.log(
+          `Merging with existing handoff JSON — keeping ${keptFromExisting.length} prior row(s): ` +
+            keptFromExisting.map((r) => `${r.sourceName} (${r.stageKey})`).join(', ')
+        );
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`Could not read existing handoff JSON at ${handoffPath} (${message}) — overwriting it.`);
+    }
+  }
+
   fs.writeFileSync(
     handoffPath,
     JSON.stringify(
-      { lifecycle: generated.lifecycle, firstName: generated.firstName, lastName: generated.lastName, rows: verifiedRows },
+      { lifecycle: generated.lifecycle, firstName: generated.firstName, lastName: generated.lastName, rows: mergedRows },
       null,
       2
     ),
