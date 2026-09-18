@@ -35,7 +35,7 @@ import { LifecycleState } from '../config/lifecycles';
 //
 // Hand-edit these, same convention as every other spec in this repo:
 const SOURCES_TO_CREATE = ['workday']; // source keys from identity-factory/user_payload.py's SOURCES — only 'copley' and 'workday' have a real attribute template so far.
-const LIFECYCLE: LifecycleState = 'processing';
+const LIFECYCLE: LifecycleState = 'active';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
 // Dedicated SharePoint folder for identity-creation evidence, already
@@ -93,6 +93,7 @@ test('Create identity — INSERT + verify via SSMS', async () => {
   console.log(`Generated: ${generated.firstName} ${generated.lastName} (${generated.rows.length} row(s))`);
 
   let anyFailed = false;
+  const uploadFailures: string[] = [];
   // insertScreenshotPath/selectScreenshotPath/attributeRows are carried here
   // so tests/creation/aggregate-and-document.spec.ts (run after manual
   // aggregation) can re-render this same creation evidence into the combined
@@ -175,16 +176,26 @@ test('Create identity — INSERT + verify via SSMS', async () => {
     );
 
     console.log('Uploading creation report to SharePoint (VDI_Automation_Evidence)...');
-    const published = await uploadFileToSharePointFolder(
-      reportPath,
-      path.basename(reportPath),
-      VDI_AUTOMATION_EVIDENCE_FOLDER_URL
-      // No syncDir/subfolder — upload goes straight into this folder itself.
-    );
-    if (published) {
-      removeLocalReportCopy(reportPath);
-    } else {
-      console.log(`SharePoint publish skipped — staging file kept at ${reportPath}`);
+    try {
+      const published = await uploadFileToSharePointFolder(
+        reportPath,
+        path.basename(reportPath),
+        VDI_AUTOMATION_EVIDENCE_FOLDER_URL
+        // No syncDir/subfolder — upload goes straight into this folder itself.
+      );
+      if (published) {
+        removeLocalReportCopy(reportPath);
+      } else {
+        console.log(`SharePoint publish skipped — staging file kept at ${reportPath}`);
+      }
+    } catch (err) {
+      // Upload is best-effort here — a SharePoint/Chrome failure must never
+      // cost the DB-verified row or the pending_aggregation handoff JSON
+      // below (confirmed live: an uncaught throw here used to abort the test
+      // before either was written, even though the identity itself was fine).
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`SharePoint upload failed — report kept locally at ${reportPath}. (${message})`);
+      uploadFailures.push(`${row.sourceName} (${row.stageKey}): ${message}`);
     }
 
     anyFailed = anyFailed || rowFailed;
@@ -213,5 +224,13 @@ test('Create identity — INSERT + verify via SSMS', async () => {
   console.log(`\nHandoff written: ${handoffPath}`);
   console.log('Next (not yet built): SailPoint source aggregation, then the existing documentation pipeline — see AGENTS.md.');
 
+  if (uploadFailures.length > 0) {
+    console.log(
+      `\nSharePoint upload failed for ${uploadFailures.length} row(s) — reports were kept locally in temp/, and the handoff JSON above is still valid:\n` +
+        uploadFailures.map((f) => `  - ${f}`).join('\n')
+    );
+  }
+
   expect(anyFailed, 'One or more rows failed DB verification after INSERT — see console output above.').toBe(false);
+  expect(uploadFailures, 'One or more SharePoint uploads failed — see console output above. Handoff JSON was still written; reports are kept locally in temp/.').toEqual([]);
 });
