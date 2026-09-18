@@ -58,6 +58,9 @@ SOURCE_TEMPLATES: dict[str, dict] = {
     "workday": {
         # Extracted from a real Rush Workday INSERT sample (2026-09-15), plus
         # a user-provided old-vs-new Workday field mapping clarification.
+        # Refreshed against a second, fuller sample (2026-09-18) that had a
+        # manager on file — the first sample's manager-related NULLs turned
+        # out to be a gap in that specific record, not representative.
         # Unlike Copley, several identity-plumbing fields the scaffold
         # normally computes (Username, Work_Email, Provider_National_ID) are
         # NULL for this source in practice — those are overridden below too,
@@ -86,27 +89,28 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         "Cost_Center": "10010942",
         "Title": "Clinical Data Abstractor Per Diem RUMC",
         "Job_Code": "03524",
-        "Job_Family": None,
-        # Sample row had no manager on file — worth confirming this is
-        # representative rather than a gap in that specific record.
-        "Manager_Name": None,
+        "Job_Family": "Risk Management",
+        "Manager_Name": "IsmaelPD p Fisher",
         "Primary_Position": "YES",
         # Sample value was the literal string "true", unlike Copley's
         # descriptive "ACTIVE REGULAR" — kept as-is per the real sample
         # rather than guessing a descriptive equivalent.
         "Relationship_Status": "true",
-        "Manager_Username": None,
-        "Manager_Employee_ID": "140281",
-        "OneUp_Manager_Employee_ID": "980927",
-        "OneUp_Manager_Network_ID": None,
-        "Work_Phone_Number": None,
+        "Manager_Username": "tsep",
+        "Manager_Employee_ID": "19087701",
+        "OneUp_Manager_Employee_ID": "20100001",
+        "OneUp_Manager_Network_ID": "ntruckenbro2",
+        "Work_Phone_Number": "1700005543",
         "Work_Hours": "Variable_time",
-        # Confirmed (not incidental): new Workday never returns a value here.
-        "Do_Not_Rehire": None,
-        # Per user decision (2026-09-15): keep the old-Workday convention —
-        # Manager_Hold defaults to the string "False"; Legal_Hold stays NULL
-        # since its new-Workday behavior is still genuinely unconfirmed.
-        "Manager_Hold": "False",
+        # Per user decision (2026-09-18): the 2026-09-15 sample's NULL here
+        # was a gap in that record, not confirmed system behavior — switched
+        # to "True" per the fuller 2026-09-18 sample.
+        "Do_Not_Rehire": "True",
+        # Per user decision (2026-09-18): supersedes the 2026-09-15 decision
+        # to default this to "False" — the fuller sample shows NULL, and the
+        # user confirmed NULL is now correct. Legal_Hold stays NULL since its
+        # new-Workday behavior is still genuinely unconfirmed.
+        "Manager_Hold": None,
         "Legal_Hold": None,
     },
 }
