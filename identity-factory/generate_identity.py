@@ -17,8 +17,8 @@ via SSMS.
 
 To add another source to an identity that already exists (e.g. someone
 created Workday-only earlier and now also needs a Copley account), pass
---number with the 7-digit number embedded in their existing Stage_Key
-(the digits between "-95" and "ER", e.g. "5763119" from WD-955763119ER)
+--number with the 6-digit number embedded in their existing Stage_Key
+(the digits between "-9512" and "ER", e.g. "763119" from WD-9512763119ER)
 plus their exact --first/--last, and --sources with only the NEW source(s)
 — this reuses that number instead of allocating a fresh one, so the new
 row's User_ID lines up with the existing account(s).
@@ -33,7 +33,14 @@ BEFORE this default existed has its own Correlation_Key already stored in
 the DB (visible on its account/identity in the SailPoint UI, or via a
 SELECT) that this script cannot re-derive on its own — pass it explicitly
 with --correlation-key so the new source's row matches it exactly:
-  python generate_identity.py --sources copley --lifecycle active --first Pablo --last Foster --number 5763119 --correlation-key "763119-WD-955763119ER"
+  python generate_identity.py --sources copley --lifecycle active --first Pablo --last Foster --number 763119 --correlation-key "763119-WD-9512763119ER"
+
+Note (2026-09-21): Stage_Key format changed from <prefix>-95<7 digits>ER to
+<prefix>-9512<6 digits>ER, applied to every source. Any --number example
+above uses the new 6-digit shape; identities created before this change
+still have the old 7-digit shape in the DB and their number can't be
+reused with today's stage_key() (it would produce a different Stage_Key
+than what's already stored for them).
 """
 
 from __future__ import annotations
@@ -97,8 +104,8 @@ def main() -> None:
     parser.add_argument(
         "--number", default=None,
         help=(
-            "Reuse this 7-digit number (from an existing Stage_Key, e.g. "
-            "\"5763119\" from WD-955763119ER) instead of allocating a new "
+            "Reuse this 6-digit number (from an existing Stage_Key, e.g. "
+            "\"763119\" from WD-9512763119ER) instead of allocating a new "
             "one — use this to add another source to an identity that "
             "already exists elsewhere, so the new row correlates with it. "
             "Requires --first/--last to match that existing identity."
@@ -129,8 +136,8 @@ def main() -> None:
 
     if args.number and not (args.first and args.last):
         parser.error("--number requires --first and --last (the existing identity's exact name).")
-    if args.number and not (args.number.isdigit() and len(args.number) == 7):
-        parser.error(f'--number must be exactly 7 digits, got "{args.number}".')
+    if args.number and not (args.number.isdigit() and len(args.number) == 6):
+        parser.error(f'--number must be exactly 6 digits, got "{args.number}".')
 
     first, last = args.first, args.last
     if not first or not last:

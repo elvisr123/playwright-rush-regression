@@ -122,9 +122,9 @@ def lifecycle_dates(lifecycle: str) -> dict:
 
 
 def unique_id() -> str:
-    """7 random digits - the number segment embedded in stage_key(), and also
+    """6 random digits - the number segment embedded in stage_key(), and also
     the basis for User_ID/Provider_National_ID/Correlation_Key derivation."""
-    return f"{random.randint(0, 9999999):07d}"
+    return f"{random.randint(0, 999999):06d}"
 
 
 # Per user request (2026-09-18): random instead of the old fixed 1998-05-10,
@@ -146,11 +146,13 @@ def random_person_name() -> tuple[str, str]:
 
 
 def stage_key(prefix: str, number: str) -> str:
-    # e.g. WD-951234567ER for prefix "WD" and number "1234567" - user-specified
-    # format: <source prefix>-95<7 random digits>ER. Uniqueness is enforced by
-    # the caller retrying unique_id() against excel_store.used_stage_keys()
-    # (see generate_identity.py's allocate_number), not by this function.
-    return f"{prefix}-95{number}ER"
+    # e.g. WD-9512123456ER for prefix "WD" and number "123456" - user-specified
+    # format (2026-09-21, supersedes the prior <prefix>-95<7 digits>ER shape,
+    # applies to every source): <source prefix>-9512<6 random digits>ER.
+    # Uniqueness is enforced by the caller retrying unique_id() against
+    # excel_store.used_stage_keys() (see generate_identity.py's
+    # allocate_number), not by this function.
+    return f"{prefix}-9512{number}ER"
 
 
 def build_my_rush_jobs_row(
