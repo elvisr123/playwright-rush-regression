@@ -6,6 +6,7 @@ the VDI INSERT). SailPoint is not required to populate or inspect that row.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import random
 from datetime import date, timedelta
@@ -155,6 +156,19 @@ def stage_key(prefix: str, number: str) -> str:
     return f"{prefix}-9512{number}ER"
 
 
+def default_correlation_key(user_id: str, number: str) -> str:
+    """Long, hash-like Correlation_Key in the style of real Rush test data
+    (e.g. a manually-created identity's Correlation_Key was a ~107-char
+    uppercase hex string) - per user request (2026-09-21), the previous
+    short "{user_id}-{number}" default looked too small next to real
+    examples. Deterministic from user_id/number alone (both already shared
+    across every source for one identity, per build_my_rush_jobs_row's
+    caller) so every source's row gets the identical value automatically -
+    same correctness requirement as before, just a longer/denser shape."""
+    digest = hashlib.sha512(f"{user_id}{number}".encode()).hexdigest().upper()
+    return digest
+
+
 def build_my_rush_jobs_row(
     source_key: str,
     key: str,
@@ -192,7 +206,7 @@ def build_my_rush_jobs_row(
     email = f"{given}{last}@gmail.com"
     scaffold = {
         "Stage_Key": key,
-        "Correlation_Key": correlation_key or f"{user_id}-{number}",
+        "Correlation_Key": correlation_key or default_correlation_key(user_id, number),
         "Username": display,
         "Work_Email": email,
         "User_ID": user_id,
