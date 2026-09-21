@@ -74,19 +74,36 @@ Start-Sleep -Milliseconds 1000
 Start-Sleep -Milliseconds 300
 
 # Paste via the clipboard instead of typing character-by-character with
-# SendKeys. SendKeys::SendWait sends one line per call with no chunking or
-# per-character pacing - fine for short lines, but a long single-line value
-# (e.g. a 132-char Correlation_Key) can overrun the input queue and drop or
-# scramble characters, especially over a Citrix/RDP session; a corrupted
-# line then throws off SSMS's cursor position for every {ENTER} after it,
-# cascading into the rest of the query. A clipboard paste is one atomic OS
-# operation regardless of how long the text is, and also sidesteps the old
-# IntelliSense-popup-eats-Enter risk entirely (no per-keystroke typing to
-# trigger it), so the {ESC} workaround and Escape-SendKeys' special-character
-# handling are no longer needed either.
+# SendKeys - a clipboard paste is one atomic OS operation regardless of how
+# long the text is, sidestepping SendKeys' per-line-no-chunking behavior
+# (originally suspected as the corruption cause here) and the IntelliSense-
+# popup-eats-Enter risk entirely.
+#
+# Confirmed live (2026-09-21) that SendKeys/SSMS/the clipboard content were
+# all NOT the actual problem: the same clipboard content pasted perfectly
+# both in Notepad and via a MANUAL Ctrl+V into SSMS. What differed in the
+# automated run was timing - this script only waited a fixed 300ms between
+# Set-Clipboard and sending ^v, while manually reaching SSMS to paste took
+# much longer without anyone timing it. That's not reliably enough for the
+# clipboard to fully propagate over the Citrix/RDP session in every case.
+# Poll the actual clipboard content instead of guessing at a fixed delay -
+# both more robust (won't paste before it's ready) and no slower than
+# necessary (won't wait once it already is).
 Write-Output "Pasting query..."
 Set-Clipboard -Value $Query
-Start-Sleep -Milliseconds 300
+$clipboardReady = $false
+$deadline = (Get-Date).AddSeconds(10)
+while ((Get-Date) -lt $deadline) {
+    if ((Get-Clipboard -Raw) -eq $Query) {
+        $clipboardReady = $true
+        break
+    }
+    Start-Sleep -Milliseconds 100
+}
+if (-not $clipboardReady) {
+    Write-Error "Clipboard never reflected the query text within 10s - aborting rather than pasting stale/wrong content."
+    exit 1
+}
 [System.Windows.Forms.SendKeys]::SendWait("^v")
 Start-Sleep -Milliseconds 500
 
