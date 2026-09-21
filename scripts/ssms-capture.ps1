@@ -44,25 +44,6 @@ public class SsmsCaptureWin32 {
 $SW_RESTORE = 9
 $SW_MAXIMIZE = 3
 
-function Escape-SendKeys([string]$text) {
-    # SendKeys treats these as control characters - wrap each in braces so
-    # it's typed literally instead of interpreted. { and } MUST be escaped
-    # FIRST: escaping any other char (e.g. "(" -> "{(}") introduces new { }
-    # characters, and if { / } are escaped after that, this second pass
-    # re-escapes the braces the first pass just inserted, compounding into
-    # garbage. This stayed hidden for a long time because every query tried
-    # so far had brackets but no parens (or vice versa) - not enough special
-    # characters together to compound. A real INSERT statement (60+ bracketed
-    # column names AND parens for the column list / VALUES clause) triggers
-    # it badly enough that SendKeys chokes partway through and SSMS only
-    # ends up with a truncated "INSERT INTO [SOA].[dbo].[My_Rush_Jobs] ".
-    $specials = @('{', '}', '+', '^', '%', '~', '(', ')', '[', ']')
-    foreach ($ch in $specials) {
-        $text = $text.Replace($ch, '{' + $ch + '}')
-    }
-    return $text
-}
-
 Write-Output "Looking for an open, connected SSMS window..."
 $proc = Get-Process -ErrorAction SilentlyContinue |
     Where-Object { $_.MainWindowTitle -like "*Microsoft SQL Server Management Studio*" } |
@@ -87,37 +68,26 @@ Write-Output "Opening a new query tab..."
 [System.Windows.Forms.SendKeys]::SendWait("^n")
 Start-Sleep -Milliseconds 1000
 
-# Clear anything already in the tab, then type the query.
+# Clear anything already in the tab, then paste the query.
 [System.Windows.Forms.SendKeys]::SendWait("^a")
 [System.Windows.Forms.SendKeys]::SendWait("{DEL}")
 Start-Sleep -Milliseconds 300
 
-# Type real line breaks (SendKeys "{ENTER}") instead of flattening the whole
-# query to one line. Each line is trimmed on both ends before typing rather
-# than keeping the source file's own indentation: SSMS's editor auto-indents
-# to match the previous line after Enter, so also typing the original
-# leading whitespace would compound (line 2 = auto-indent + typed indent,
-# line 3 = that + typed indent again, ...), producing a growing staircase.
-# Trimming avoids that; the tradeoff is left-aligned rather than
-# hand-indented lines, which only matters cosmetically here - SQL Server
-# doesn't care about whitespace/formatting.
-Write-Output "Typing query..."
-$lines = $Query -split "`r?`n"
-for ($i = 0; $i -lt $lines.Count; $i++) {
-    $line = $lines[$i].Trim()
-    if ($line.Length -gt 0) {
-        [System.Windows.Forms.SendKeys]::SendWait((Escape-SendKeys $line))
-    }
-    if ($i -lt $lines.Count - 1) {
-        # {ESC} first: dismisses any IntelliSense/autocomplete suggestion
-        # popup SSMS may have shown while typing this line - without it,
-        # Enter can accept the popup's highlighted suggestion instead of
-        # inserting a newline, silently corrupting the next line's content.
-        [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
-        [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
-        Start-Sleep -Milliseconds 30
-    }
-}
+# Paste via the clipboard instead of typing character-by-character with
+# SendKeys. SendKeys::SendWait sends one line per call with no chunking or
+# per-character pacing - fine for short lines, but a long single-line value
+# (e.g. a 132-char Correlation_Key) can overrun the input queue and drop or
+# scramble characters, especially over a Citrix/RDP session; a corrupted
+# line then throws off SSMS's cursor position for every {ENTER} after it,
+# cascading into the rest of the query. A clipboard paste is one atomic OS
+# operation regardless of how long the text is, and also sidesteps the old
+# IntelliSense-popup-eats-Enter risk entirely (no per-keystroke typing to
+# trigger it), so the {ESC} workaround and Escape-SendKeys' special-character
+# handling are no longer needed either.
+Write-Output "Pasting query..."
+Set-Clipboard -Value $Query
+Start-Sleep -Milliseconds 300
+[System.Windows.Forms.SendKeys]::SendWait("^v")
 Start-Sleep -Milliseconds 500
 
 Write-Output "Executing (F5)..."
