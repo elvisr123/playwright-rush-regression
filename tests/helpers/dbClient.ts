@@ -115,3 +115,46 @@ export async function getStagingRow(table: string, stageKey: string): Promise<Re
     await pool.close().catch(() => {});
   }
 }
+
+/**
+ * Fetches every row from a STG_* staging table matching a Given_Name +
+ * Family_Name pair, normalized to string values. Used as a pre-insert
+ * duplicate check — generate_identity.py's own name-collision avoidance
+ * (excel_store.used_first_last()) only checks the local Excel audit log,
+ * which is per-machine (Mac vs VDI are separate git checkouts) and not
+ * guaranteed to be in sync, so this is a real database-backed check on
+ * top of it.
+ */
+export async function findRowsByName(
+  table: string,
+  givenName: string,
+  familyName: string
+): Promise<Record<string, string>[]> {
+  if (!KNOWN_TABLES.has(table)) {
+    throw new Error(`Refusing to query unrecognized table "${table}" — add it to KNOWN_TABLES in dbClient.ts once confirmed in SSMS.`);
+  }
+
+  const pool = new sql.ConnectionPool(config());
+  try {
+    await withTimeout(pool.connect(), HARD_TIMEOUT_MS, `Connecting to ${table}`);
+    const result = await withTimeout(
+      pool
+        .request()
+        .input('givenName', sql.VarChar, givenName)
+        .input('familyName', sql.VarChar, familyName)
+        .query(`SELECT * FROM dbo.${table} WHERE Given_Name = @givenName AND Family_Name = @familyName`),
+      HARD_TIMEOUT_MS,
+      `Querying ${table} by name`
+    );
+
+    return result.recordset.map((row) => {
+      const normalized: Record<string, string> = {};
+      for (const [key, value] of Object.entries(row)) {
+        normalized[key] = formatDbValue(value);
+      }
+      return normalized;
+    });
+  } finally {
+    await pool.close().catch(() => {});
+  }
+}

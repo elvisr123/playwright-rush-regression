@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { runGenerator } from '../helpers/generatorClient';
-import { getStagingRow } from '../helpers/dbClient';
+import { getStagingRow, findRowsByName } from '../helpers/dbClient';
 import { evaluateCheck } from '../helpers/expectedValueCheck';
 import { buildIdentityCreationReport, CreationAttributeRow } from '../helpers/buildReport';
 import { buildReportFileName, uploadFileToSharePointFolder, removeLocalReportCopy } from '../helpers/sharepointUpload';
@@ -127,6 +127,35 @@ test('Create identity — INSERT + verify via SSMS', async () => {
     correlationKey: CORRELATION_KEY,
   });
   console.log(`Generated: ${generated.firstName} ${generated.lastName} (${generated.rows.length} row(s))`);
+
+  // Belt-and-suspenders duplicate check against the LIVE database, run
+  // before any SSMS interaction. generate_identity.py's own collision
+  // avoidance (excel_store.used_first_last()/used_stage_keys()) only checks
+  // the local Excel audit log, which is per-machine (Mac and the VDI are
+  // separate git checkouts) and not guaranteed to be in sync — this closes
+  // that gap with a real query against My_Rush_Jobs itself.
+  console.log('Checking for existing duplicates in My_Rush_Jobs...');
+  const [dbGivenName, dbFamilyName] = [generated.rows[0]?.row['Given_Name'], generated.rows[0]?.row['Family_Name']];
+  if (dbGivenName && dbFamilyName) {
+    const nameMatches = await findRowsByName('My_Rush_Jobs', dbGivenName, dbFamilyName);
+    if (nameMatches.length > 0) {
+      throw new Error(
+        `Found ${nameMatches.length} existing My_Rush_Jobs row(s) already named "${dbGivenName} ${dbFamilyName}" ` +
+          `(Stage_Key(s): ${nameMatches.map((r) => r['Stage_Key']).join(', ')}) — this looks like a name collision ` +
+          `the local Excel audit log missed. Re-run to generate a fresh random name.`
+      );
+    }
+  }
+  for (const row of generated.rows) {
+    const existingByKey = await getStagingRow('My_Rush_Jobs', row.stageKey);
+    if (existingByKey) {
+      throw new Error(
+        `Stage_Key "${row.stageKey}" already exists in My_Rush_Jobs — this looks like a genuine collision the ` +
+          `local Excel audit log missed. Re-run to allocate a fresh number.`
+      );
+    }
+  }
+  console.log('No duplicates found — proceeding.');
 
   let anyFailed = false;
   const uploadFailures: string[] = [];
