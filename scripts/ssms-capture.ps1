@@ -63,6 +63,18 @@ Start-Sleep -Milliseconds 500
 [SsmsCaptureWin32]::SetForegroundWindow($hwnd) | Out-Null
 Start-Sleep -Milliseconds 500
 
+# Dismiss any stray blocking dialog before doing anything else. Confirmed
+# live (2026-09-21): a tab left open on identity-factory/data/latest_insert.sql
+# (a file local_table.py's save_row() overwrites on every generation run)
+# triggers SSMS's "file changed externally, reload?" prompt the next time
+# that tab is touched - while it's up, every keystroke this script sends
+# (^n, the paste, F5) goes to the dialog instead of the query editor, so
+# nothing gets typed/executed and the failure looks like a silent no-op.
+# {ESC} is a safe default response to any such prompt (equivalent to
+# "cancel"/"no") and is a no-op if there's no dialog at all.
+[System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+Start-Sleep -Milliseconds 300
+
 # New query tab on the SAME connection - no re-login needed.
 Write-Output "Opening a new query tab..."
 [System.Windows.Forms.SendKeys]::SendWait("^n")
