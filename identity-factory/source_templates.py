@@ -5,8 +5,9 @@ code, address, ...) — constant for every identity generated on that source —
 as opposed to the identity-specific fields (name, dates, generated IDs) built
 by user_payload.build_my_rush_jobs_row's scaffold.
 
-Only "copley" is populated today, extracted byte-for-byte from the original
-(pre-refactor) build_my_rush_jobs_row, which hardcoded these values directly.
+"copley", "workday", and "rush" are populated today; "echo", "ellucian", and
+"nerm" still raise NotImplementedError until a real reference row is
+available for them.
 
 To add a source: pull a real, known-good reference row for it — e.g. via
 tests/helpers/dbClient.ts's getStagingRow() against a Stage_Key already used
@@ -49,7 +50,68 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         "Work_Phone_Number": "1678777754",
         "Work_Hours": "8hours",
     },
-    # "rush": Phase 3 — populate from a live reference row (RL-98100122712TESTCL000PD)
+    "rush": {
+        # Extracted from a real RUSH Lawson account (Evelyn Sanders,
+        # 2026-09-22) — inactive in real life, so lifecycle-driven fields
+        # (Status/IIQDisabled/End_Date/Relationship_Status) below reflect
+        # what an ACTIVE RUSH Lawson identity should show instead of her
+        # actual (inactive) values, per explicit user confirmation:
+        #   - Relationship_Status: her real value was "Inactive" — user
+        #     confirmed "ACTIVE REGULAR" (matching Copley's convention) for
+        #     active identities instead.
+        #   - Status/End_Date still come from the shared lifecycle_dates()
+        #     scaffold, same as every other source — not overridden here.
+        # City/State/Street_Address/Postal_Code confirmed by the user to be
+        # a real work/facility address (not personal), safe to reuse as a
+        # structural constant, same treatment as Copley's facility address.
+        # Source_Name is "RUSH Lawson" (matching SOURCES["rush"]["name"] in
+        # user_payload.py) rather than the raw sample's literal "Rush
+        # Lawson" (different casing) — kept consistent with the rest of the
+        # config rather than the one sample's exact casing.
+        "Source_Name": "RUSH Lawson",
+        "User_Type": "10001",
+        "Employee_Level": "INDIVCONT",
+        "Employee_Type": "EMPLOYEE",
+        "Country": "US",
+        "City": "Chicago",
+        "State": "IL",
+        "Street_Address": "628 S Racine Ave 3",
+        "Postal_Code": "60607",
+        "Company_Name": "RUSH MEDICAL CENTER",
+        "Organization": "10",
+        "Vendor_Code": "EMP",
+        "Location": "14 W Tower (Med-Surg Oncology)",
+        "Location_Code": "1H312",
+        "Department_Name": "14 W Tower (Med-Surg Oncology)",
+        "Department": "1H312",
+        "Cost_Center": "1010-203-10",
+        "Title": "Patient Care Tech",
+        "Job_Code": "34",
+        "Job_Family": "LICCERTECH",
+        "Manager_Name": "Phalen, Lisa",
+        "Primary_Position": "YES",
+        # Per user decision (2026-09-22): "ACTIVE REGULAR" for active
+        # identities, not the real sample's "Inactive" (see note above).
+        "Relationship_Status": "ACTIVE REGULAR",
+        "Salary_Structure": "PCT-PCT ADV",
+        "Manager_Username": "LPHALEN",
+        "Manager_Employee_ID": "042558",
+        "OneUp_Manager_Employee_ID": "181609",
+        "OneUp_Manager_Network_ID": "KPIERRE",
+        "Work_Phone_Number": None,
+        "Work_Hours": "12",
+        "Do_Not_Rehire": "false",
+        "Working_Remotely": "No",
+        "Manager_Hold": None,
+        "Legal_Hold": None,
+        # Username/Work_Email deliberately NOT overridden here (unlike
+        # Workday's explicit None) — the real sample's "esanders" /
+        # "Evelyn_Sanders@rushtst.com" look like AD-provisioned values
+        # synced back into the source after account creation (same pattern
+        # documented for Copley's real samples), not what a fresh
+        # pre-aggregation INSERT should carry. Left to the scaffold's
+        # default (display name / a gmail.com placeholder), same as Copley.
+    },
     # "echo": Phase 3 — populate from a live reference row (EC-9512021TESTCL902ER)
     # "ellucian": Phase 3 — no known reference Stage_Key exists yet; needs a
     #             fresh SELECT TOP 5 * FROM My_Rush_Jobs WHERE Source_Name =

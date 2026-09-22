@@ -164,13 +164,22 @@ def default_correlation_key(user_id: str, number: str) -> str:
     FF419D73C9DA5FF2F21321C6A3BA01FF585124") - notably, that value starts
     with "9512", the same literal segment stage_key() uses - so this
     prepends "9512" to a long hex tail instead of just returning a bare
-    hash. Deterministic from user_id/number alone (both already shared
-    across every source for one identity, per build_my_rush_jobs_row's
+    hash. Extended to exactly 150 characters total per a further user
+    request (2026-09-22) - a second hash segment (SHA-256 of the same seed,
+    truncated) is appended after the SHA-512 segment to reach 150
+    (4 + 128 + 18). Deterministic from user_id/number alone (both already
+    shared across every source for one identity, per build_my_rush_jobs_row's
     caller) so every source's row gets the identical value automatically -
     same correctness requirement as the original short default, just a
-    longer/denser shape matching real examples."""
-    digest = hashlib.sha512(f"{user_id}{number}".encode()).hexdigest().upper()
-    return f"9512{digest}"
+    longer/denser shape matching real examples. (Real Rush samples aren't
+    fully consistent with each other here - e.g. Evelyn Sanders' real RUSH
+    Lawson Correlation_Key is a bare 128-char hash with no "9512" prefix at
+    all - this is our own standardized template, not a replication of any
+    one source's exact real-world convention.)"""
+    seed = f"{user_id}{number}"
+    primary = hashlib.sha512(seed.encode()).hexdigest().upper()
+    extra = hashlib.sha256((seed + "EXT").encode()).hexdigest().upper()[:18]
+    return f"9512{primary}{extra}"
 
 
 def build_my_rush_jobs_row(
