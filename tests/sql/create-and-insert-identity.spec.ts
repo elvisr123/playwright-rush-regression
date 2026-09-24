@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { runGenerator } from '../helpers/generatorClient';
 import { getStagingRow, findRowsByName } from '../helpers/dbClient';
+import { isSailPointConfigured, aggregateSourceByName } from '../helpers/sailpointClient';
 import { evaluateCheck } from '../helpers/expectedValueCheck';
 import { buildIdentityCreationReport, CreationAttributeRow } from '../helpers/buildReport';
 import { buildReportFileName, uploadFileToSharePointFolder, removeLocalReportCopy } from '../helpers/sharepointUpload';
@@ -68,6 +69,17 @@ const LAST: string | undefined = undefined;
 const NUMBER: string | undefined = undefined;
 const BIRTH_DATE: string | undefined = undefined; // 'YYYY-MM-DD'
 const CORRELATION_KEY: string | undefined = undefined;
+// Opt-in: automatically trigger + wait for SailPoint source aggregation via
+// the API after every row is INSERTed and DB-verified below, instead of
+// aggregating manually in the sandbox UI (tests/helpers/sailpointClient.ts).
+// Requires SAILPOINT_BASE_URL/SAILPOINT_CLIENT_ID/SAILPOINT_CLIENT_SECRET in
+// .env — if those aren't set, this is silently skipped regardless of this
+// flag (see the isSailPointConfigured() check below), same convention as
+// SharePoint upload being skippable via SHAREPOINT_UPLOAD=false. Off by
+// default: the aggregation-trigger endpoint itself hasn't been verified
+// against live SailPoint API docs yet (see sailpointClient.ts's header
+// comment) — turn this on deliberately once you've confirmed it works.
+const TRIGGER_AGGREGATION = false;
 // Dedicated SharePoint folder for identity-creation evidence, already
 // created by a teammate — a SIBLING of testplaywright_testcases under
 // Rush_TestCases, not a child of it, so this is its own direct sharing URL
@@ -313,7 +325,32 @@ test('Create identity — INSERT + verify via SSMS', async () => {
     'utf8'
   );
   console.log(`\nHandoff written: ${handoffPath}`);
-  console.log('Next (not yet built): SailPoint source aggregation, then the existing documentation pipeline — see AGENTS.md.');
+
+  const aggregationFailures: string[] = [];
+  if (TRIGGER_AGGREGATION && isSailPointConfigured()) {
+    const sourceNames = [...new Set(mergedRows.map((r) => r.sourceName))];
+    for (const sourceName of sourceNames) {
+      console.log(`Triggering SailPoint aggregation for "${sourceName}"...`);
+      try {
+        await aggregateSourceByName(sourceName);
+        console.log(`  Aggregation complete for "${sourceName}".`);
+      } catch (err) {
+        // Best-effort, same reasoning as the SharePoint upload try/catch
+        // above — an aggregation failure must never cost the already-
+        // successful DB verification or the handoff JSON. Fall back to
+        // the documented manual step.
+        const message = err instanceof Error ? err.message : String(err);
+        console.log(`  Aggregation failed for "${sourceName}" (${message}) — aggregate manually in the sandbox instead.`);
+        aggregationFailures.push(`${sourceName}: ${message}`);
+      }
+    }
+  } else if (TRIGGER_AGGREGATION) {
+    console.log(
+      'TRIGGER_AGGREGATION is true, but SAILPOINT_BASE_URL/SAILPOINT_CLIENT_ID/SAILPOINT_CLIENT_SECRET aren\'t set in .env — skipping. Aggregate manually in the sandbox instead.'
+    );
+  } else {
+    console.log('Next: manually run source aggregation in the sandbox, then the existing documentation pipeline — see AGENTS.md.');
+  }
 
   if (uploadFailures.length > 0) {
     console.log(
@@ -324,4 +361,5 @@ test('Create identity — INSERT + verify via SSMS', async () => {
 
   expect(anyFailed, 'One or more rows failed DB verification after INSERT — see console output above.').toBe(false);
   expect(uploadFailures, 'One or more SharePoint uploads failed — see console output above. Handoff JSON was still written; reports are kept locally in temp/.').toEqual([]);
+  expect(aggregationFailures, 'One or more SailPoint aggregation triggers failed — see console output above. Aggregate manually in the sandbox instead.').toEqual([]);
 });
