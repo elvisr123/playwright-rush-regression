@@ -135,7 +135,8 @@ use a different vocabulary in the UI vs. the DB for the same state).
 
 `identity-factory/` can generate a brand-new synthetic identity and INSERT it
 into `My_Rush_Jobs` via SSMS, with screenshot evidence, instead of requiring
-one to already exist. Requires Python 3 on the VDI (`python --version` —
+one to already exist. Requires Python 3 on the VDI (`python --version` or `py --version` — the
+test tries `python` first, then falls back to the `py -3` launcher;
 confirm this works; some VDI images only have the Microsoft Store shim
 installed, which errors instead of running).
 

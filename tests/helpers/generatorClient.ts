@@ -55,6 +55,30 @@ export interface GenerateOptions {
  * Only the printed JSON is read from stdout; the script's own progress
  * lines go to stderr and are not captured here.
  */
+/**
+ * Finds a working Python 3 interpreter. Tries `python` first, then the
+ * Windows `py -3` launcher — on some VDI images `python` is only the
+ * Microsoft Store shim (prints "Python was not found" and exits non-zero)
+ * while a real install is still reachable via `py`. Returns the command plus
+ * any prefix args to pass before the script path.
+ */
+function resolvePython(): string[] {
+  const candidates = [['python'], ['py', '-3']];
+  for (const [cmd, ...prefix] of candidates) {
+    try {
+      const out = execFileSync(cmd, [...prefix, '--version'], { encoding: 'utf8', timeout: 15_000, stdio: 'pipe' });
+      if (/^Python 3\./.test(out.trim())) return [cmd, ...prefix];
+    } catch {
+      // not installed, or the Store shim — try the next candidate
+    }
+  }
+  throw new Error(
+    'Could not find Python 3 — tried `python` and `py -3`. On some VDI images, "python" with no real ' +
+      'install falls through to a Microsoft Store shim that errors instead of running. Install a real ' +
+      'Python 3 and confirm `python --version` or `py --version` works before re-running this test.'
+  );
+}
+
 export function runGenerator(
   sources: string[],
   lifecycle: LifecycleState,
@@ -69,20 +93,8 @@ export function runGenerator(
   if (opts.birthDate) args.push('--birth-date', opts.birthDate);
   if (opts.correlationKey) args.push('--correlation-key', opts.correlationKey);
 
-  let stdout: string;
-  try {
-    stdout = execFileSync('python', args, { encoding: 'utf8', timeout: 60_000 });
-  } catch (err) {
-    const cause = err as NodeJS.ErrnoException;
-    if (cause.code === 'ENOENT') {
-      throw new Error(
-        'Could not run "python" — is Python 3 installed and on PATH? On some VDI images, "python" with no ' +
-          'real install falls through to a Microsoft Store shim that errors instead of running. Install a ' +
-          'real Python 3 and confirm `python --version` works before re-running this test.'
-      );
-    }
-    throw err;
-  }
+  const [pythonCmd, ...pythonPrefixArgs] = resolvePython();
+  const stdout = execFileSync(pythonCmd, [...pythonPrefixArgs, ...args], { encoding: 'utf8', timeout: 60_000 });
 
   // The script writes only the JSON payload to stdout (everything else goes
   // to stderr) — but take the last non-empty line defensively, in case
