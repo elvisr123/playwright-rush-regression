@@ -41,19 +41,22 @@ const FIRST: string | undefined = undefined; // leave undefined for a random, de
 const LAST: string | undefined = undefined;
 // To add another source to an identity that already exists (e.g. someone
 // created Workday-only earlier and now also needs a Copley account): set
-// FIRST/LAST to their exact name, NUMBER to the 6 digits embedded in their
-// existing Stage_Key (the digits between "-9512" and "ER", e.g. "763119"
-// from WD-9512763119ER), and BIRTH_DATE to their existing Birth_Date — then
-// set SOURCES_TO_CREATE to ONLY the new source(s). This reuses that
-// identity's number/Birth_Date instead of generating new ones, so the new
-// row's User_ID lines up with the existing account(s). Leave all three
-// undefined for a normal brand-new identity.
+// FIRST/LAST to their exact name, NUMBER to the 12 digits embedded in their
+// existing Stage_Key (the digits between "-9001" and "ER", e.g.
+// "179069605612" from WD-9001179069605612ER), and BIRTH_DATE to their
+// existing Birth_Date — then set SOURCES_TO_CREATE to ONLY the new
+// source(s). This reuses that identity's number/Birth_Date instead of
+// generating new ones, so the new row's User_ID lines up with the existing
+// account(s). Leave all three undefined for a normal brand-new identity.
 //
-// Note (2026-09-21): Stage_Key format changed from <prefix>-95<7 digits>ER
-// to <prefix>-9512<6 digits>ER, applied to every source. An identity created
-// before this change still has the old 7-digit shape in the DB — its number
-// can't be reused with today's format (it would produce a different
-// Stage_Key than what's already stored for them).
+// Note (2026-09-29): Stage_Key format changed from <prefix>-9512<6 digits>ER
+// to <prefix>-9001<epoch seconds><2 random digits>ER (12 digits total),
+// applied to every source — the digits after "9001" are the Unix epoch
+// timestamp (seconds) the identity was generated at (decodable at
+// epochconverter.com) plus 2 random digits. An identity created before this
+// change still has the old 6-digit shape in the DB — its number can't be
+// reused with today's format (it would produce a different Stage_Key than
+// what's already stored for them).
 //
 // CORRELATION_KEY is also required for this add-a-source case: SailPoint
 // correlates accounts into one identity by an EXACT match of Correlation_Key

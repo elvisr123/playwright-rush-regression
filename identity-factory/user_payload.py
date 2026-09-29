@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import os
 import random
+import time
 from datetime import date, timedelta
 
 from name_generator import unused_person_name
@@ -123,9 +124,19 @@ def lifecycle_dates(lifecycle: str) -> dict:
 
 
 def unique_id() -> str:
-    """6 random digits - the number segment embedded in stage_key(), and also
-    the basis for User_ID/Provider_National_ID/Correlation_Key derivation."""
-    return f"{random.randint(0, 999999):06d}"
+    """Current epoch-seconds timestamp (10 digits today, via epochconverter.com
+    convention - stays 10 digits until year 2286) plus 2 random digits - the
+    number segment embedded in stage_key(), and also the basis for
+    User_ID/Provider_National_ID/Correlation_Key derivation. Per user request
+    (2026-09-29): epoch-based so a Stage_Key's creation time can be decoded
+    directly (paste the digits after the prefix into epochconverter.com),
+    with the 2 random digits as a safety net against two identities being
+    generated in the same second colliding. Collision-checking against
+    excel_store.used_stage_keys() (see generate_identity.py's
+    allocate_number) still applies on top of this, same as before."""
+    epoch_seconds = int(time.time())
+    random_suffix = random.randint(0, 99)
+    return f"{epoch_seconds}{random_suffix:02d}"
 
 
 # Per user request (2026-09-18): random instead of the old fixed 1998-05-10,
@@ -147,13 +158,14 @@ def random_person_name() -> tuple[str, str]:
 
 
 def stage_key(prefix: str, number: str) -> str:
-    # e.g. WD-9512123456ER for prefix "WD" and number "123456" - user-specified
-    # format (2026-09-21, supersedes the prior <prefix>-95<7 digits>ER shape,
-    # applies to every source): <source prefix>-9512<6 random digits>ER.
+    # e.g. WD-9001179069605612ER for prefix "WD" and number "179069605612"
+    # (10 epoch-second digits + 2 random) - user-specified format (2026-09-29,
+    # supersedes the prior <prefix>-9512<6 random digits>ER shape, applies to
+    # every source): <source prefix>-9001<epoch seconds><2 random digits>ER.
     # Uniqueness is enforced by the caller retrying unique_id() against
     # excel_store.used_stage_keys() (see generate_identity.py's
     # allocate_number), not by this function.
-    return f"{prefix}-9512{number}ER"
+    return f"{prefix}-9001{number}ER"
 
 
 def default_correlation_key(user_id: str, number: str) -> str:
@@ -175,11 +187,16 @@ def default_correlation_key(user_id: str, number: str) -> str:
     fully consistent with each other here - e.g. Evelyn Sanders' real RUSH
     Lawson Correlation_Key is a bare 128-char hash with no "9512" prefix at
     all - this is our own standardized template, not a replication of any
-    one source's exact real-world convention.)"""
+    one source's exact real-world convention.)
+
+    Prefix switched from "9512" to "9001" (2026-09-29) to match stage_key()'s
+    new literal segment, keeping the two consistent per user decision - same
+    rationale as the original "9512" choice, just following stage_key()'s
+    prefix change."""
     seed = f"{user_id}{number}"
     primary = hashlib.sha512(seed.encode()).hexdigest().upper()
     extra = hashlib.sha256((seed + "EXT").encode()).hexdigest().upper()[:18]
-    return f"9512{primary}{extra}"
+    return f"9001{primary}{extra}"
 
 
 def build_my_rush_jobs_row(
