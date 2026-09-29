@@ -115,6 +115,8 @@ function uniqueFields(fields: string[]): string[] {
 // these use ACCOUNT_DETAIL_FIELDS_BASE + SOURCE_FIELD_PROFILES extras.
 const KNOWN_HR_SOURCES = new Set([
   'RUSH Lawson',
+  'RUSH Workday',
+  'Rush Workday',
   'Copley Lawson',
   'ECHO Credentialed Providers',
   'Ellucian Students',
@@ -189,8 +191,15 @@ function resolveDetailFields(testCase: TestCase, primaryName: string): string[] 
   ]);
 }
 
+function fieldsBySource(record: Record<string, string[]> | undefined, sourceName: string): string[] | undefined {
+  if (!record) return undefined;
+  if (Object.prototype.hasOwnProperty.call(record, sourceName)) return record[sourceName];
+  const key = Object.keys(record).find((name) => name.trim().toLowerCase() === sourceName.trim().toLowerCase());
+  return key !== undefined ? record[key] : undefined;
+}
+
 function resolveAccountFields(sourceName: string, testCase: TestCase, primaryName: string): string[] {
-  const bySource = testCase.accountDetailFieldsBySource?.[sourceName];
+  const bySource = fieldsBySource(testCase.accountDetailFieldsBySource, sourceName);
   if (bySource) return uniqueFields(bySource);
 
   if (sourceName === primaryName && testCase.accountDetailFields) {
@@ -232,14 +241,28 @@ function collectBlanks(context: string, values: Record<string, string[]> | void,
 // page (the caller tries the other page, or reports NOT FOUND if neither has it).
 type CheckOutcome = { result: 'PASS' | 'FAIL'; actual: string[] };
 
+function acceptedValuesFor(check: ExpectedValueCheck): string[] {
+  const values = [check.expected, ...(check.allowed ?? [])];
+  const seen = new Set<string>();
+  return values.filter((v) => {
+    const key = v.trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function evaluateCheck(check: ExpectedValueCheck, values: Record<string, string[]> | void): CheckOutcome | undefined {
   const occurrences = values?.[check.field];
   if (!occurrences || occurrences.length === 0) return undefined;
   const matchType = check.matchType ?? 'exact';
+  const accepted = acceptedValuesFor(check);
   const matched = occurrences.some((actual) => {
     const a = actual.trim().toLowerCase();
-    const e = check.expected.trim().toLowerCase();
-    return matchType === 'contains' ? a.includes(e) : a === e;
+    return accepted.some((expected) => {
+      const e = expected.trim().toLowerCase();
+      return matchType === 'contains' ? a.includes(e) : a === e;
+    });
   });
   return { result: matched ? 'PASS' : 'FAIL', actual: occurrences };
 }
@@ -500,7 +523,7 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
       }
     }
 
-    const hasExplicitFieldList = Boolean(testCase.accountDetailFieldsBySource?.[sourceName]);
+    const hasExplicitFieldList = Boolean(fieldsBySource(testCase.accountDetailFieldsBySource, sourceName));
     if (!isKnownHrSource && !hasExplicitFieldList) unconfirmedFieldSources.push(sourceName);
     checkedSummary.push(
       `${sourceName} Account Detail: ${accountFields.join(', ')}` +

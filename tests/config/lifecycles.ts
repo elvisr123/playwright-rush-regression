@@ -2,6 +2,7 @@
 export const LIFECYCLE_STATES = [
   'futurehire',
   'prehire',
+  'processing',
   'active',
   'termed',
   'inactive',

@@ -42,6 +42,16 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'], storageState: 'playwright/.auth/user.json' },
       dependencies: ['setup'],
+      testIgnore: /outlook-login\.setup\.ts|email-notification\.spec\.ts/,
+    },
+    {
+      name: 'outlook',
+      testMatch: /email-notification\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'outlook-setup',
+      testMatch: /outlook-login\.setup\.ts/,
     },
 
     /* Only chromium is used for the Rush automation — SailPoint testing doesn't

@@ -1,6 +1,7 @@
 /** Exact SailPoint source names (Admin → Sources). Folder names under tests/sources/ map here. */
 export const SOURCES = {
   rush: 'RUSH Lawson',
+  workday: 'RUSH Workday',
   copley: 'Copley Lawson',
   echo: 'ECHO Credentialed Providers',
   ellucian: 'Ellucian Students',
@@ -20,6 +21,8 @@ export type SourceKey = keyof typeof SOURCES;
 export const SOURCE_TO_STG_TABLE: Partial<Record<string, string>> = {
   'Copley Lawson': 'STG_Copley_Lawson',
   'RUSH Lawson': 'STG_Rush_Lawson',
+  'RUSH Workday': 'STG_Rush_Workday',
+  'Rush Workday': 'STG_Rush_Workday',
   'ECHO Credentialed Providers': 'STG_Echo',
   'Ellucian Students': 'STG_Ellucian',
 };

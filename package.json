@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "record:outlook-search": "node scripts/record-outlook-search.mjs"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
@@ -14,5 +16,8 @@
     "docx": "^9.7.1",
     "dotenv": "^17.4.2",
     "image-size": "^2.0.2"
+  },
+  "dependencies": {
+    "mssql": "^12.7.0"
   }
 }
