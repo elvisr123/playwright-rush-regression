@@ -7,14 +7,18 @@
 // dependency, matches nothing else in this codebase using a different HTTP
 // client.
 //
-// IMPORTANT — not verified against live SailPoint API docs: the
-// aggregation-trigger path (AGGREGATE_PATH below) and the task-status
-// response shape (TaskStatus) are both based on recollection of SailPoint's
-// v3 API, not confirmed live. If the first real call 404s or the response
-// shape doesn't match, check https://developer.sailpoint.com/docs/api/v3
-// (search "load accounts" / "aggregate" under Sources or Accounts) and
-// update the constant / types below — everything else in this file
-// (auth, source lookup, polling loop) is independent of that one detail.
+// IMPORTANT — aggregation trigger still not fully working, tracked live:
+// - Attempt 1, /v3/sources/{id}/load-accounts: 404, with the gateway's own
+//   error showing a doubled "sources/sources" path segment — a strong sign
+//   that path isn't a real registered v3 sub-resource at all.
+// - Attempt 2 (current), /sources/v1/{id}/load-accounts: 400 "content is
+//   semantically invalid" — real progress, this path IS routed/recognized,
+//   the empty `{}` body we send just doesn't satisfy whatever schema it
+//   expects. Next step: find the correct request body (SailPoint API docs,
+//   https://developer.sailpoint.com/docs/api/v3, or whoever's tenant-admin-
+//   familiar) and update triggerAggregation()'s POST body accordingly.
+// The task-status response shape (TaskStatus) is still unverified too —
+// check that once the trigger call itself succeeds.
 
 interface SailPointConfig {
   baseUrl: string;
@@ -103,7 +107,7 @@ export async function getSourceIdByName(sourceName: string): Promise<string> {
 }
 
 // See the file-header note — not verified live.
-const AGGREGATE_PATH = (sourceId: string) => `/v3/sources/${sourceId}/load-accounts`;
+const AGGREGATE_PATH = (sourceId: string) => `/sources/v1/${sourceId}/load-accounts`;
 
 /** Kicks off account aggregation for a source. Returns immediately with a task ID — aggregation itself runs async. */
 export async function triggerAggregation(sourceId: string): Promise<string> {

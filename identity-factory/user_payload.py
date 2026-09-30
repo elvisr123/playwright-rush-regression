@@ -7,7 +7,6 @@ the VDI INSERT). SailPoint is not required to populate or inspect that row.
 from __future__ import annotations
 
 import hashlib
-import os
 import random
 import time
 from datetime import date, timedelta
@@ -15,7 +14,15 @@ from datetime import date, timedelta
 from name_generator import unused_person_name
 from source_templates import structural_fields
 
-INITIALS = os.environ.get("CREATOR_INITIALS", "AA").upper()
+# Per team decision (2026-09-29, via Sravan Kumar): every automation-created
+# identity's Given_Name/Display_Name embeds the literal marker "Rush" (e.g.
+# "PaulRush Moore") so a name alone identifies it as automation-created,
+# replacing the old per-machine CREATOR_INITIALS env var (which only tracked
+# which teammate's machine generated the identity, e.g. "ER" for Elvis R) -
+# combined with stage_key()'s "9001"+epoch-timestamp segment, this satisfies
+# both of Sravan's stated requirements: identifiable as automation-created,
+# and identifiable by creation time.
+INITIALS = "Rush"
 
 LIFECYCLES = ("futurehire", "prehire", "active", "termed", "inactive", "rehire", "processing")
 
