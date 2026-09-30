@@ -1,0 +1,189 @@
+"""Per-source structural fields for a My_Rush_Jobs row.
+
+These describe the SOURCE / workplace (department, manager, location, job
+code, address, ...) — constant for every identity generated on that source —
+as opposed to the identity-specific fields (name, dates, generated IDs) built
+by user_payload.build_my_rush_jobs_row's scaffold.
+
+"copley", "workday", and "rush" are populated today; "echo", "ellucian", and
+"nerm" still raise NotImplementedError until a real reference row is
+available for them.
+
+To add a source: pull a real, known-good reference row for it — e.g. via
+tests/helpers/dbClient.ts's getStagingRow() against a Stage_Key already used
+in tests/sources/<source>/*.spec.ts (or a fresh SELECT in SSMS for a source
+with no existing reference, like Ellucian) — and fill in its structural
+fields the same way Copley's are below. See AGENTS.md.
+"""
+
+from __future__ import annotations
+
+SOURCE_TEMPLATES: dict[str, dict] = {
+    "copley": {
+        "Source_Name": "Copley Lawson",
+        "User_Type": "RCMC",
+        "Employee_Level": "NURSE",
+        "Employee_Type": "EMPLOYEE",
+        "Country": "US",
+        "City": "CHANA",
+        "State": "IL",
+        "Street_Address": "2905 STONEHILL RD ",
+        "Postal_Code": "61019",
+        "Company_Name": "101",
+        "Organization": "202",
+        "Vendor_Code": "EMP",
+        "Location": "NICU",
+        "Location_Code": "101",
+        "Department_Name": "NICU",
+        "Department": "101",
+        "Cost_Center": "43800",
+        "Title": "REGISTERED NURSE",
+        "Job_Code": "369",
+        "Job_Family": "REGISTNURS",
+        "Manager_Name": "REES, SHERRY A.",
+        "Primary_Position": "YES",
+        "Relationship_Status": "ACTIVE REGULAR",
+        "Manager_Username": "99314",
+        "Manager_Employee_ID": "99314",
+        "OneUp_Manager_Employee_ID": "107641",
+        "OneUp_Manager_Network_ID": "107641",
+        "Work_Phone_Number": "1678777754",
+        "Work_Hours": "8hours",
+    },
+    "rush": {
+        # Extracted from a real RUSH Lawson account (Evelyn Sanders,
+        # 2026-09-22) — inactive in real life, so lifecycle-driven fields
+        # (Status/IIQDisabled/End_Date/Relationship_Status) below reflect
+        # what an ACTIVE RUSH Lawson identity should show instead of her
+        # actual (inactive) values, per explicit user confirmation:
+        #   - Relationship_Status: her real value was "Inactive" — user
+        #     confirmed "ACTIVE REGULAR" (matching Copley's convention) for
+        #     active identities instead.
+        #   - Status/End_Date still come from the shared lifecycle_dates()
+        #     scaffold, same as every other source — not overridden here.
+        # City/State/Street_Address/Postal_Code confirmed by the user to be
+        # a real work/facility address (not personal), safe to reuse as a
+        # structural constant, same treatment as Copley's facility address.
+        # Source_Name is "RUSH Lawson" (matching SOURCES["rush"]["name"] in
+        # user_payload.py) rather than the raw sample's literal "Rush
+        # Lawson" (different casing) — kept consistent with the rest of the
+        # config rather than the one sample's exact casing.
+        "Source_Name": "RUSH Lawson",
+        "User_Type": "10001",
+        "Employee_Level": "INDIVCONT",
+        "Employee_Type": "EMPLOYEE",
+        "Country": "US",
+        "City": "Chicago",
+        "State": "IL",
+        "Street_Address": "628 S Racine Ave 3",
+        "Postal_Code": "60607",
+        "Company_Name": "RUSH MEDICAL CENTER",
+        "Organization": "10",
+        "Vendor_Code": "EMP",
+        "Location": "14 W Tower (Med-Surg Oncology)",
+        "Location_Code": "1H312",
+        "Department_Name": "14 W Tower (Med-Surg Oncology)",
+        "Department": "1H312",
+        "Cost_Center": "1010-203-10",
+        "Title": "Patient Care Tech",
+        "Job_Code": "34",
+        "Job_Family": "LICCERTECH",
+        "Manager_Name": "Phalen, Lisa",
+        "Primary_Position": "YES",
+        # Per user decision (2026-09-22): "ACTIVE REGULAR" for active
+        # identities, not the real sample's "Inactive" (see note above).
+        "Relationship_Status": "ACTIVE REGULAR",
+        "Salary_Structure": "PCT-PCT ADV",
+        "Manager_Username": "LPHALEN",
+        "Manager_Employee_ID": "042558",
+        "OneUp_Manager_Employee_ID": "181609",
+        "OneUp_Manager_Network_ID": "KPIERRE",
+        "Work_Phone_Number": None,
+        "Work_Hours": "12",
+        "Do_Not_Rehire": "false",
+        "Working_Remotely": "No",
+        "Manager_Hold": None,
+        "Legal_Hold": None,
+        # Username/Work_Email deliberately NOT overridden here (unlike
+        # Workday's explicit None) — the real sample's "esanders" /
+        # "Evelyn_Sanders@rushtst.com" look like AD-provisioned values
+        # synced back into the source after account creation (same pattern
+        # documented for Copley's real samples), not what a fresh
+        # pre-aggregation INSERT should carry. Left to the scaffold's
+        # default (display name / a gmail.com placeholder), same as Copley.
+    },
+    # "echo": Phase 3 — populate from a live reference row (EC-9512021TESTCL902ER)
+    # "ellucian": Phase 3 — no known reference Stage_Key exists yet; needs a
+    #             fresh SELECT TOP 5 * FROM My_Rush_Jobs WHERE Source_Name =
+    #             'Ellucian Students' on the VDI first.
+    # "nerm": Phase 3 — populate from a live reference row (NE-19825552TEST000PDPPL)
+    "workday": {
+        # Extracted from a real Rush Workday INSERT sample (2026-09-15), plus
+        # a user-provided old-vs-new Workday field mapping clarification.
+        # Refreshed against a second, fuller sample (2026-09-18) that had a
+        # manager on file — the first sample's manager-related NULLs turned
+        # out to be a gap in that specific record, not representative.
+        # Unlike Copley, several identity-plumbing fields the scaffold
+        # normally computes (Username, Work_Email, Provider_National_ID) are
+        # NULL for this source in practice — those are overridden below too,
+        # not just the structural ones, since structural_fields() merges on
+        # top of the scaffold and can override any column.
+        "Source_Name": "Rush Workday",
+        "Username": None,
+        "Work_Email": None,
+        "Provider_National_ID": None,
+        "Email_Required": "Yes",
+        "User_Type": None,
+        "Employee_Level": "RUSH_INDIVCONT",
+        "Employee_Type": "EE_Standard",
+        "Country": "US",
+        "City": "Chicago",
+        "State": "IL",
+        "Street_Address": "1700 W. Van Buren St",
+        "Postal_Code": "60612",
+        "Company_Name": "Rush",
+        "Organization": "10",
+        "Vendor_Code": "EMP",
+        "Location": "Chicago Triangle Office Building TOB",
+        "Location_Code": "Chicago Triangle Office Building TOB",
+        "Department_Name": "System Center Qlt Analytics",
+        "Department": "10755",
+        "Cost_Center": "10010942",
+        "Title": "Clinical Data Abstractor Per Diem RUMC",
+        "Job_Code": "03524",
+        "Job_Family": "Risk Management",
+        "Manager_Name": "IsmaelPD p Fisher",
+        "Primary_Position": "YES",
+        # Sample value was the literal string "true", unlike Copley's
+        # descriptive "ACTIVE REGULAR" — kept as-is per the real sample
+        # rather than guessing a descriptive equivalent.
+        "Relationship_Status": "true",
+        "Manager_Username": "tsep",
+        "Manager_Employee_ID": "19087701",
+        "OneUp_Manager_Employee_ID": "20100001",
+        "OneUp_Manager_Network_ID": "ntruckenbro2",
+        "Work_Phone_Number": "1700005543",
+        "Work_Hours": "Variable_time",
+        # Per user decision (2026-09-18): the 2026-09-15 sample's NULL here
+        # was a gap in that record, not confirmed system behavior — switched
+        # to "True" per the fuller 2026-09-18 sample.
+        "Do_Not_Rehire": "True",
+        # Per user decision (2026-09-18): supersedes the 2026-09-15 decision
+        # to default this to "False" — the fuller sample shows NULL, and the
+        # user confirmed NULL is now correct. Legal_Hold stays NULL since its
+        # new-Workday behavior is still genuinely unconfirmed.
+        "Manager_Hold": None,
+        "Legal_Hold": None,
+    },
+}
+
+
+def structural_fields(source_key: str) -> dict:
+    template = SOURCE_TEMPLATES.get(source_key)
+    if template is None:
+        raise NotImplementedError(
+            f'No structural attribute template for source "{source_key}" yet. '
+            "Only Copley Lawson is filled in — populate SOURCE_TEMPLATES[...] "
+            "from a live reference row before generating this source. See AGENTS.md."
+        )
+    return template

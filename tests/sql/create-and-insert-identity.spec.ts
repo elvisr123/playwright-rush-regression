@@ -1,0 +1,368 @@
+import { test, expect } from '@playwright/test';
+import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import { runGenerator } from '../helpers/generatorClient';
+import { getStagingRow, findRowsByName } from '../helpers/dbClient';
+import { isSailPointConfigured, aggregateSourceByName } from '../helpers/sailpointClient';
+import { evaluateCheck } from '../helpers/expectedValueCheck';
+import { buildIdentityCreationReport, CreationAttributeRow } from '../helpers/buildReport';
+import { buildReportFileName, uploadFileToSharePointFolder, removeLocalReportCopy } from '../helpers/sharepointUpload';
+import { LifecycleState } from '../config/lifecycles';
+
+// Creates a brand-new synthetic My_Rush_Jobs identity and INSERTs it via
+// SSMS (screenshotted), then verifies every generated field actually landed
+// in the DB — the first half of the identity-creation pipeline (see
+// AGENTS.md / the plan this was built from). The second half (SailPoint
+// source aggregation, then handing off to the existing documentation
+// pipeline) is a separate, not-yet-built phase — this test stops after
+// writing temp/pending_aggregation_<label>.json, the documented handoff
+// point for that future step.
+//
+// Produces a Word report per source (temp/Creation_<source>_<stageKey>_...
+// .docx, via buildIdentityCreationReport in tests/helpers/buildReport.ts):
+// the full SSMS window right after the INSERT, the full SSMS window showing
+// the verification SELECT, and a table of every generated field vs. what
+// was actually read back from the DB. Each report is then uploaded directly
+// into VDI_AUTOMATION_EVIDENCE_FOLDER_URL below via the same
+// uploadFileToSharePointFolder (tests/helpers/sharepointUpload.ts) the main
+// documentation pipeline already uses — this spawns its own separate
+// Chrome/SSO session internally, so it works fine from this browserless
+// sql-tools test.
+//
+// Windows-only, same precondition as ssms-my-rush-jobs.spec.ts: SSMS itself
+// only runs on Windows, and must already be open and connected (see
+// scripts/ssms-capture.ps1 — this never launches or logs into SSMS itself).
+//
+// Hand-edit these, same convention as every other spec in this repo:
+const SOURCES_TO_CREATE = ['workday']; // source keys from identity-factory/user_payload.py's SOURCES — only 'copley' and 'workday' have a real attribute template so far.
+const LIFECYCLE: LifecycleState = 'active';
+const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
+const LAST: string | undefined = undefined;
+// To add another source to an identity that already exists (e.g. someone
+// created Workday-only earlier and now also needs a Copley account): set
+// FIRST/LAST to their exact name, NUMBER to the 12 digits embedded in their
+// existing Stage_Key (the digits between "-9001" and "ER", e.g.
+// "179069605612" from WD-9001179069605612ER), and BIRTH_DATE to their
+// existing Birth_Date — then set SOURCES_TO_CREATE to ONLY the new
+// source(s). This reuses that identity's number/Birth_Date instead of
+// generating new ones, so the new row's User_ID lines up with the existing
+// account(s). Leave all three undefined for a normal brand-new identity.
+//
+// Note (2026-09-29): Stage_Key format changed from <prefix>-9512<6 digits>ER
+// to <prefix>-9001<epoch seconds><2 random digits>ER (12 digits total),
+// applied to every source — the digits after "9001" are the Unix epoch
+// timestamp (seconds) the identity was generated at (decodable at
+// epochconverter.com) plus 2 random digits. An identity created before this
+// change still has the old 6-digit shape in the DB — its number can't be
+// reused with today's format (it would produce a different Stage_Key than
+// what's already stored for them).
+//
+// CORRELATION_KEY is also required for this add-a-source case: SailPoint
+// correlates accounts into one identity by an EXACT match of Correlation_Key
+// (confirmed live — a real multi-source identity had byte-for-byte identical
+// Correlation_Key values across sources despite different Stage_Keys), and
+// an identity created before this field was auto-derived has its own
+// already-stored value this script cannot re-derive. Paste it exactly from
+// that identity's existing account in the SailPoint UI (Attributes >
+// Correlation_Key) or a DB SELECT. A fresh multi-source identity (NUMBER
+// left undefined) doesn't need this — Correlation_Key is auto-derived from
+// the freshly allocated number and is already identical across every source
+// in SOURCES_TO_CREATE for that one run.
+const NUMBER: string | undefined = undefined;
+const BIRTH_DATE: string | undefined = undefined; // 'YYYY-MM-DD'
+const CORRELATION_KEY: string | undefined = undefined;
+// Opt-in: automatically trigger + wait for SailPoint source aggregation via
+// the API after every row is INSERTed and DB-verified below, instead of
+// aggregating manually in the sandbox UI (tests/helpers/sailpointClient.ts).
+// Requires SAILPOINT_BASE_URL/SAILPOINT_CLIENT_ID/SAILPOINT_CLIENT_SECRET in
+// .env — if those aren't set, this is silently skipped regardless of this
+// flag (see the isSailPointConfigured() check below), same convention as
+// SharePoint upload being skippable via SHAREPOINT_UPLOAD=false. Off by
+// default: the aggregation-trigger endpoint itself hasn't been verified
+// against live SailPoint API docs yet (see sailpointClient.ts's header
+// comment) — turn this on deliberately once you've confirmed it works.
+const TRIGGER_AGGREGATION = false;
+// Dedicated SharePoint folder for identity-creation evidence, already
+// created by a teammate — a SIBLING of testplaywright_testcases under
+// Rush_TestCases, not a child of it, so this is its own direct sharing URL
+// rather than a subfolder name under the default SHAREPOINT_FOLDER_URL.
+// Upload goes straight into this folder — no subfolder is created inside it.
+const VDI_AUTOMATION_EVIDENCE_FOLDER_URL =
+  'https://netorgft1314491.sharepoint.com/:f:/s/AsbRushISC/IgCaiDn8JnZXRJHaP0WojAT4AUK0-wlDMgOshHbceu8ivy8?e=V6MMsT';
+
+// Runs one query through ssms-capture.ps1 and returns the screenshot path —
+// same query-via-temp-file mechanism as ssms-my-rush-jobs.spec.ts (avoids
+// passing SQL text as a CLI argument, which powershell.exe -File mangles).
+function runSsmsCapture(query: string, outDir: string, stageKey: string, suffix: string): string {
+  const queryPath = path.join(outDir, `create_${stageKey}_${suffix}.sql`);
+  const outPath = path.join(outDir, `create_${stageKey}_${suffix}.png`);
+  fs.writeFileSync(queryPath, query, 'utf8');
+  const psScript = path.resolve('scripts', 'ssms-capture.ps1');
+  try {
+    execFileSync(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', psScript, '-QueryFile', queryPath, '-OutputPath', outPath],
+      // A full My_Rush_Jobs INSERT is ~2000+ escaped characters, and
+      // SendKeys types character-by-character — confirmed via a live run
+      // that 60s isn't enough (it was still typing, past character 1500,
+      // when the process got killed). The SELECT verification query is
+      // short and finishes in seconds either way, so one generous timeout
+      // covers both without needing to special-case query length.
+      { stdio: 'inherit', timeout: 180_000 }
+    );
+  } finally {
+    fs.rmSync(queryPath, { force: true });
+  }
+  if (!fs.existsSync(outPath)) {
+    throw new Error(`Expected screenshot at ${outPath} but it wasn't created.`);
+  }
+  return outPath;
+}
+
+test('Create identity — INSERT + verify via SSMS', async () => {
+  test.skip(process.platform !== 'win32', 'SSMS automation only runs on Windows — run this from inside the VDI.');
+  // Default Playwright test timeout is 30s — nowhere near enough for a
+  // multi-minute SendKeys typing session per row (see runSsmsCapture's own
+  // 180s timeout, which can run twice per row: INSERT + verification SELECT),
+  // plus the SharePoint upload step, which can require a one-time manual SSO
+  // sign-in (see AGENTS.md / sharepointUpload.ts). 600s matches the same
+  // RUN_TIMEOUT_MS the main documentation pipeline uses for this reason.
+  test.setTimeout(600_000);
+
+  const outDir = path.resolve('temp');
+  fs.mkdirSync(outDir, { recursive: true });
+
+  console.log(`Generating identity: sources=${SOURCES_TO_CREATE.join(',')} lifecycle=${LIFECYCLE}...`);
+  const generated = runGenerator(SOURCES_TO_CREATE, LIFECYCLE, {
+    first: FIRST,
+    last: LAST,
+    number: NUMBER,
+    birthDate: BIRTH_DATE,
+    correlationKey: CORRELATION_KEY,
+  });
+  console.log(`Generated: ${generated.firstName} ${generated.lastName} (${generated.rows.length} row(s))`);
+
+  // Belt-and-suspenders duplicate check against the LIVE database, run
+  // before any SSMS interaction. generate_identity.py's own collision
+  // avoidance (excel_store.used_first_last()/used_stage_keys()) only checks
+  // the local Excel audit log, which is per-machine (Mac and the VDI are
+  // separate git checkouts) and not guaranteed to be in sync — this closes
+  // that gap with a real query against My_Rush_Jobs itself.
+  console.log('Checking for existing duplicates in My_Rush_Jobs...');
+  const [dbGivenName, dbFamilyName] = [generated.rows[0]?.row['Given_Name'], generated.rows[0]?.row['Family_Name']];
+  if (dbGivenName && dbFamilyName) {
+    const nameMatches = await findRowsByName('My_Rush_Jobs', dbGivenName, dbFamilyName);
+    if (nameMatches.length > 0) {
+      throw new Error(
+        `Found ${nameMatches.length} existing My_Rush_Jobs row(s) already named "${dbGivenName} ${dbFamilyName}" ` +
+          `(Stage_Key(s): ${nameMatches.map((r) => r['Stage_Key']).join(', ')}) — this looks like a name collision ` +
+          `the local Excel audit log missed. Re-run to generate a fresh random name.`
+      );
+    }
+  }
+  for (const row of generated.rows) {
+    const existingByKey = await getStagingRow('My_Rush_Jobs', row.stageKey);
+    if (existingByKey) {
+      throw new Error(
+        `Stage_Key "${row.stageKey}" already exists in My_Rush_Jobs — this looks like a genuine collision the ` +
+          `local Excel audit log missed. Re-run to allocate a fresh number.`
+      );
+    }
+  }
+  console.log('No duplicates found — proceeding.');
+
+  let anyFailed = false;
+  const uploadFailures: string[] = [];
+  // insertScreenshotPath/selectScreenshotPath/attributeRows are carried here
+  // so tests/creation/aggregate-and-document.spec.ts (run after manual
+  // aggregation) can re-render this same creation evidence into the combined
+  // report without re-deriving or re-running anything.
+  const verifiedRows: {
+    sourceKey: string;
+    sourceName: string;
+    stageKey: string;
+    dbVerified: boolean;
+    insertScreenshotPath: string;
+    selectScreenshotPath: string;
+    attributeRows: CreationAttributeRow[];
+  }[] = [];
+
+  // Sequential, not parallel — scripts/ssms-capture.ps1 drives one live SSMS
+  // window; concurrent SendKeys streams into the same window would race.
+  for (const row of generated.rows) {
+    console.log(`\n--- ${row.sourceName} (${row.stageKey}) ---`);
+
+    console.log('Running INSERT in SSMS...');
+    const insertScreenshot = runSsmsCapture(row.insertSql, outDir, row.stageKey, 'insert');
+    console.log(`INSERT screenshot: ${insertScreenshot}`);
+
+    console.log('Running verification SELECT in SSMS...');
+    const selectQuery = `SELECT * FROM [SOA].[dbo].[My_Rush_Jobs] WHERE Stage_Key = '${row.stageKey}';`;
+    const selectScreenshot = runSsmsCapture(selectQuery, outDir, row.stageKey, 'select');
+    console.log(`SELECT screenshot: ${selectScreenshot}`);
+
+    // Structured verification: confirm every generated field actually landed
+    // in the DB, via the same evaluateCheck logic already used by the
+    // UI-based expectedValues checks and the standalone SQL DB-verify test
+    // — "expected" here is the row we just generated, not a hand-maintained
+    // list. Every field (not just failures) becomes a row in the Word
+    // report's attribute table; only mismatches get logged to the console,
+    // since a full row is 50+ fields and a wall of PASS lines isn't useful there.
+    const dbRow = await getStagingRow('My_Rush_Jobs', row.stageKey);
+    const values: Record<string, string[]> = {};
+    if (dbRow) {
+      for (const [column, value] of Object.entries(dbRow)) values[column] = [value];
+    }
+
+    if (!dbRow) {
+      console.log(`  FAIL — no row found in My_Rush_Jobs for Stage_Key "${row.stageKey}" after INSERT`);
+    }
+
+    const attributeRows: CreationAttributeRow[] = Object.entries(row.row).map(([field, value]) => {
+      const generatedValue = value === null || value === undefined ? '' : String(value);
+      const dbValue = dbRow?.[field] ?? '';
+      if (!generatedValue.trim()) {
+        return { field, generatedValue: 'NULL', dbValue: dbValue || 'NULL', result: 'skipped' as const };
+      }
+      if (!dbRow) {
+        return { field, generatedValue, dbValue: '(no row found)', result: 'no_row' as const };
+      }
+      const outcome = evaluateCheck({ field, expected: generatedValue }, values);
+      if (outcome?.result !== 'PASS') {
+        console.log(`  MISMATCH — ${field}: generated "${generatedValue}", My_Rush_Jobs has "${dbValue || '(not found)'}"`);
+      }
+      const result: CreationAttributeRow['result'] = outcome?.result === 'PASS' ? 'match' : 'mismatch';
+      return { field, generatedValue, dbValue: dbValue || '(not found)', result };
+    });
+
+    const rowFailed = !dbRow || attributeRows.some((r) => r.result === 'mismatch' || r.result === 'no_row');
+    if (!rowFailed) {
+      console.log(`  All ${attributeRows.length} generated fields verified in My_Rush_Jobs.`);
+    }
+
+    const reportPath = path.join(outDir, `Creation_${buildReportFileName(`${row.sourceKey}_${row.stageKey}`)}`);
+    await buildIdentityCreationReport(
+      {
+        identityName: `${generated.firstName} ${generated.lastName}`,
+        stageKey: row.stageKey,
+        sourceName: row.sourceName,
+        lifecycle: generated.lifecycle,
+      },
+      insertScreenshot,
+      selectScreenshot,
+      attributeRows,
+      reportPath
+    );
+
+    console.log('Uploading creation report to SharePoint (VDI_Automation_Evidence)...');
+    try {
+      const published = await uploadFileToSharePointFolder(
+        reportPath,
+        path.basename(reportPath),
+        VDI_AUTOMATION_EVIDENCE_FOLDER_URL
+        // No syncDir/subfolder — upload goes straight into this folder itself.
+      );
+      if (published) {
+        removeLocalReportCopy(reportPath);
+      } else {
+        console.log(`SharePoint publish skipped — staging file kept at ${reportPath}`);
+      }
+    } catch (err) {
+      // Upload is best-effort here — a SharePoint/Chrome failure must never
+      // cost the DB-verified row or the pending_aggregation handoff JSON
+      // below (confirmed live: an uncaught throw here used to abort the test
+      // before either was written, even though the identity itself was fine).
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`SharePoint upload failed — report kept locally at ${reportPath}. (${message})`);
+      uploadFailures.push(`${row.sourceName} (${row.stageKey}): ${message}`);
+    }
+
+    anyFailed = anyFailed || rowFailed;
+    verifiedRows.push({
+      sourceKey: row.sourceKey,
+      sourceName: row.sourceName,
+      stageKey: row.stageKey,
+      dbVerified: !rowFailed,
+      insertScreenshotPath: insertScreenshot,
+      selectScreenshotPath: selectScreenshot,
+      attributeRows,
+    });
+  }
+
+  const label = `${generated.firstName}_${generated.lastName}_${generated.lifecycle}`.replace(/\s+/g, '_');
+  const handoffPath = path.join(outDir, `pending_aggregation_${label}.json`);
+
+  // Merge into an existing handoff file for this person rather than
+  // overwriting it — matters when adding another source (e.g. Copley) to an
+  // identity that already has a handoff JSON from an earlier, different
+  // SOURCES_TO_CREATE run (e.g. Workday-only); a plain overwrite would lose
+  // that source's screenshots/attributeRows. Same source re-run replaces its
+  // own row (matched by stageKey) rather than duplicating it.
+  let mergedRows = verifiedRows;
+  if (fs.existsSync(handoffPath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(handoffPath, 'utf8')) as { rows?: typeof verifiedRows };
+      const newStageKeys = new Set(verifiedRows.map((r) => r.stageKey));
+      const keptFromExisting = (existing.rows || []).filter((r) => !newStageKeys.has(r.stageKey));
+      mergedRows = [...keptFromExisting, ...verifiedRows];
+      if (keptFromExisting.length > 0) {
+        console.log(
+          `Merging with existing handoff JSON — keeping ${keptFromExisting.length} prior row(s): ` +
+            keptFromExisting.map((r) => `${r.sourceName} (${r.stageKey})`).join(', ')
+        );
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`Could not read existing handoff JSON at ${handoffPath} (${message}) — overwriting it.`);
+    }
+  }
+
+  fs.writeFileSync(
+    handoffPath,
+    JSON.stringify(
+      { lifecycle: generated.lifecycle, firstName: generated.firstName, lastName: generated.lastName, rows: mergedRows },
+      null,
+      2
+    ),
+    'utf8'
+  );
+  console.log(`\nHandoff written: ${handoffPath}`);
+
+  const aggregationFailures: string[] = [];
+  if (TRIGGER_AGGREGATION && isSailPointConfigured()) {
+    const sourceNames = [...new Set(mergedRows.map((r) => r.sourceName))];
+    for (const sourceName of sourceNames) {
+      console.log(`Triggering SailPoint aggregation for "${sourceName}"...`);
+      try {
+        await aggregateSourceByName(sourceName);
+        console.log(`  Aggregation complete for "${sourceName}".`);
+      } catch (err) {
+        // Best-effort, same reasoning as the SharePoint upload try/catch
+        // above — an aggregation failure must never cost the already-
+        // successful DB verification or the handoff JSON. Fall back to
+        // the documented manual step.
+        const message = err instanceof Error ? err.message : String(err);
+        console.log(`  Aggregation failed for "${sourceName}" (${message}) — aggregate manually in the sandbox instead.`);
+        aggregationFailures.push(`${sourceName}: ${message}`);
+      }
+    }
+  } else if (TRIGGER_AGGREGATION) {
+    console.log(
+      'TRIGGER_AGGREGATION is true, but SAILPOINT_BASE_URL/SAILPOINT_CLIENT_ID/SAILPOINT_CLIENT_SECRET aren\'t set in .env — skipping. Aggregate manually in the sandbox instead.'
+    );
+  } else {
+    console.log('Next: manually run source aggregation in the sandbox, then the existing documentation pipeline — see AGENTS.md.');
+  }
+
+  if (uploadFailures.length > 0) {
+    console.log(
+      `\nSharePoint upload failed for ${uploadFailures.length} row(s) — reports were kept locally in temp/, and the handoff JSON above is still valid:\n` +
+        uploadFailures.map((f) => `  - ${f}`).join('\n')
+    );
+  }
+
+  expect(anyFailed, 'One or more rows failed DB verification after INSERT — see console output above.').toBe(false);
+  expect(uploadFailures, 'One or more SharePoint uploads failed — see console output above. Handoff JSON was still written; reports are kept locally in temp/.').toEqual([]);
+  expect(aggregationFailures, 'One or more SailPoint aggregation triggers failed — see console output above. Aggregate manually in the sandbox instead.').toEqual([]);
+});

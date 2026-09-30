@@ -1,5 +1,14 @@
 import sql from 'mssql';
 
+// Non-throwing check for callers that need to decide whether to attempt a DB
+// check at all (e.g. the main regression suite, which normally runs outside
+// the VDI where these vars are never set — the DB cross-check should silently
+// not run there rather than fail every scenario on a missing-config error).
+export function isDbConfigured(): boolean {
+  const { DB_SERVER, DB_DATABASE, DB_USERNAME, DB_PASSWORD } = process.env;
+  return Boolean(DB_SERVER && DB_DATABASE && DB_USERNAME && DB_PASSWORD);
+}
+
 function config(): sql.config {
   const { DB_SERVER, DB_DATABASE, DB_USERNAME, DB_PASSWORD } = process.env;
   if (!DB_SERVER || !DB_DATABASE || !DB_USERNAME || !DB_PASSWORD) {
@@ -13,6 +22,13 @@ function config(): sql.config {
     user: DB_USERNAME,
     password: DB_PASSWORD,
     options: { encrypt: true, trustServerCertificate: true },
+    // Bound both phases explicitly — a silently-dropped connection (e.g. a
+    // firewall black-holing the port rather than rejecting it) can otherwise
+    // hang well past what mssql's own defaults would suggest, which is
+    // fatal when this runs mid-way through a long Playwright regression
+    // case rather than as a standalone script.
+    connectionTimeout: 10_000,
+    requestTimeout: 10_000,
   };
 }
 
@@ -27,7 +43,44 @@ const KNOWN_TABLES = new Set([
   'STG_Ellucian',
   'STG_Rush_Workday',
   'STG_Rise',
+  'My_Rush_Jobs',
 ]);
+
+// Hard upper bound on top of config()'s connectionTimeout/requestTimeout —
+// a second line of defense in case a connection hangs in a way that
+// bypasses mssql's own timeout handling (observed: a run that should take
+// ~15s hanging indefinitely once called from inside a long Playwright test
+// rather than a standalone script).
+const HARD_TIMEOUT_MS = 20_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
+// mssql parses a SQL `date` column (no time component) as a UTC-midnight JS
+// Date. String(date) then formats it in the *local machine* timezone, which
+// rolls UTC midnight back to the previous evening — e.g. a stored
+// 1998-05-10 reads back as "Sat May 09 1998 19:00:00 GMT-0500 ...". The
+// stored data is correct; only naive stringification is wrong. Format as a
+// plain YYYY-MM-DD when the UTC time-of-day is exactly midnight (true for
+// every date-only column in this schema), so it matches the same format
+// generated identities use (identity-factory/user_payload.py's
+// lifecycle_dates()) and compares correctly with a plain exact-string
+// check. Falls back to full ISO for anything with a real time component.
+function formatDbValue(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) {
+    const iso = value.toISOString();
+    return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : iso;
+  }
+  return String(value);
+}
 
 /**
  * Fetches one row from a STG_* staging table by Stage_Key, normalized to
@@ -43,21 +96,65 @@ export async function getStagingRow(table: string, stageKey: string): Promise<Re
 
   const pool = new sql.ConnectionPool(config());
   try {
-    await pool.connect();
-    const result = await pool
-      .request()
-      .input('stageKey', sql.VarChar, stageKey)
-      .query(`SELECT * FROM dbo.${table} WHERE Stage_Key = @stageKey`);
+    await withTimeout(pool.connect(), HARD_TIMEOUT_MS, `Connecting to ${table}`);
+    const result = await withTimeout(
+      pool.request().input('stageKey', sql.VarChar, stageKey).query(`SELECT * FROM dbo.${table} WHERE Stage_Key = @stageKey`),
+      HARD_TIMEOUT_MS,
+      `Querying ${table}`
+    );
 
     const row = result.recordset[0];
     if (!row) return undefined;
 
     const normalized: Record<string, string> = {};
     for (const [key, value] of Object.entries(row)) {
-      normalized[key] = value === null || value === undefined ? '' : String(value);
+      normalized[key] = formatDbValue(value);
     }
     return normalized;
   } finally {
-    await pool.close();
+    await pool.close().catch(() => {});
+  }
+}
+
+/**
+ * Fetches every row from a STG_* staging table matching a Given_Name +
+ * Family_Name pair, normalized to string values. Used as a pre-insert
+ * duplicate check — generate_identity.py's own name-collision avoidance
+ * (excel_store.used_first_last()) only checks the local Excel audit log,
+ * which is per-machine (Mac vs VDI are separate git checkouts) and not
+ * guaranteed to be in sync, so this is a real database-backed check on
+ * top of it.
+ */
+export async function findRowsByName(
+  table: string,
+  givenName: string,
+  familyName: string
+): Promise<Record<string, string>[]> {
+  if (!KNOWN_TABLES.has(table)) {
+    throw new Error(`Refusing to query unrecognized table "${table}" — add it to KNOWN_TABLES in dbClient.ts once confirmed in SSMS.`);
+  }
+
+  const pool = new sql.ConnectionPool(config());
+  try {
+    await withTimeout(pool.connect(), HARD_TIMEOUT_MS, `Connecting to ${table}`);
+    const result = await withTimeout(
+      pool
+        .request()
+        .input('givenName', sql.VarChar, givenName)
+        .input('familyName', sql.VarChar, familyName)
+        .query(`SELECT * FROM dbo.${table} WHERE Given_Name = @givenName AND Family_Name = @familyName`),
+      HARD_TIMEOUT_MS,
+      `Querying ${table} by name`
+    );
+
+    return result.recordset.map((row) => {
+      const normalized: Record<string, string> = {};
+      for (const [key, value] of Object.entries(row)) {
+        normalized[key] = formatDbValue(value);
+      }
+      return normalized;
+    });
+  } finally {
+    await pool.close().catch(() => {});
   }
 }

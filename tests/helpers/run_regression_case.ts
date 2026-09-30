@@ -14,7 +14,7 @@ import {
   getAllAccountSourceNames,
   highlightExactTexts,
 } from './screenshotEvidence';
-import { buildReport } from './buildReport';
+import { buildReport, buildCombinedReport, CreationEvidenceEntry } from './buildReport';
 import {
   captureSection,
   capturePaginatedSection,
@@ -24,13 +24,14 @@ import {
   waitForLoadingToFinish,
   waitForStableSearchResults,
 } from './pageActions';
-import { TestCase, SOURCE_FIELD_PROFILES, ExpectedValueCheck } from '../config/testcases';
-import { SOURCE_TO_STG_TABLE } from '../config/sources';
+import { TestCase, SOURCE_FIELD_PROFILES } from '../config/testcases';
+import { evaluateCheck, formatCheckResult } from './expectedValueCheck';
+import { getStagingRow, isDbConfigured } from './dbClient';
 import { lifecycleLabel } from '../config/lifecycles';
-import { getStagingRow } from './dbClient';
 import {
   buildReportFileName,
   localReportPath,
+  uploadReportForSource,
   uploadFileToSharePointFolder,
   removeLocalReportCopy,
 } from './sharepointUpload';
@@ -236,60 +237,158 @@ function collectBlanks(context: string, values: Record<string, string[]> | void,
   }
 }
 
-// Evaluates a single expected-value check against one page's captured
-// values. Returns undefined if the field wasn't found on this particular
-// page (the caller tries the other page, or reports NOT FOUND if neither has it).
-type CheckOutcome = { result: 'PASS' | 'FAIL'; actual: string[] };
+// Some fields use a different vocabulary in the UI vs. the DB for the same
+// underlying state — e.g. Status: the UI shows Enabled/Disabled (derived
+// from IIQDisabled), while My_Rush_Jobs' own Status column uses
+// Active/Inactive/Terminated for the same lifecycle state. Without this,
+// that pairing would flag as a mismatch on every single run. Extend this if
+// another field turns out to have a similar UI-vocabulary-vs-DB-vocabulary
+// split — don't assume every field needs it.
+const EQUIVALENT_VALUE_GROUPS: string[][] = [
+  ['enabled', 'active'],
+  ['disabled', 'inactive', 'terminated'],
+];
 
-function acceptedValuesFor(check: ExpectedValueCheck): string[] {
-  const values = [check.expected, ...(check.allowed ?? [])];
-  const seen = new Set<string>();
-  return values.filter((v) => {
-    const key = v.trim().toLowerCase();
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+function equivalentGroup(value: string): string[] | undefined {
+  return EQUIVALENT_VALUE_GROUPS.find((group) => group.includes(value));
 }
 
-function evaluateCheck(check: ExpectedValueCheck, values: Record<string, string[]> | void): CheckOutcome | undefined {
-  const occurrences = values?.[check.field];
-  if (!occurrences || occurrences.length === 0) return undefined;
-  const matchType = check.matchType ?? 'exact';
-  const accepted = acceptedValuesFor(check);
-  const matched = occurrences.some((actual) => {
-    const a = actual.trim().toLowerCase();
-    return accepted.some((expected) => {
-      const e = expected.trim().toLowerCase();
-      return matchType === 'contains' ? a.includes(e) : a === e;
-    });
-  });
-  return { result: matched ? 'PASS' : 'FAIL', actual: occurrences };
+// Best-effort equality for the DB cross-check below: exact match first, then
+// the vocabulary-equivalence groups above, then falls back to comparing as
+// dates — the UI and the My_Rush_Jobs staging table often render the same
+// date differently (e.g. "05/10/1998" on screen vs "1998-05-10" in the DB),
+// which would otherwise flag as a false mismatch on every date field, every run.
+function valuesRoughlyMatch(uiValue: string, dbValue: string): boolean {
+  const a = uiValue.trim().toLowerCase();
+  const b = dbValue.trim().toLowerCase();
+  if (a === b) return true;
+  const group = equivalentGroup(a);
+  if (group && group.includes(b)) return true;
+  const dateA = new Date(uiValue);
+  const dateB = new Date(dbValue);
+  return !isNaN(dateA.getTime()) && !isNaN(dateB.getTime()) && dateA.getTime() === dateB.getTime();
 }
 
-function formatCheckResult(check: ExpectedValueCheck, outcome: CheckOutcome | undefined): string {
-  if (!outcome) {
-    return `NOT FOUND — ${check.field}: expected "${check.expected}", but this field wasn't matched on the page`;
+interface DbComparisonRow {
+  field: string;
+  uiValue: string;
+  dbValue: string;
+  result: 'match' | 'mismatch' | 'skipped';
+}
+
+// Cross-checks one source's Account Detail page against its own row in the
+// My_Rush_Jobs staging table (by that source's Stage_Key) — safe to compare
+// directly because both sides describe the SAME source's own account, unlike
+// the Identity Details page (see the Correlation Key comment below), which
+// pulls several fields from RUSH Lawson specifically regardless of which
+// source is primary. Only fields that exist as an exact-name column on the DB
+// row are compared (Account Detail field labels are already underscore-cased
+// to match My_Rush_Jobs column names) — this also naturally skips UI-only
+// fields like "Identity" or "Source Name" that have no DB equivalent.
+function buildDbComparisonRows(accountValues: Record<string, string[]>, dbRow: Record<string, string>): DbComparisonRow[] {
+  const rows: DbComparisonRow[] = [];
+  for (const [field, occurrences] of Object.entries(accountValues)) {
+    if (!(field in dbRow)) continue;
+    const uiValue = occurrences[0];
+    const dbValue = dbRow[field];
+    if (isBlank(uiValue) || isBlank(dbValue)) {
+      rows.push({ field, uiValue, dbValue, result: 'skipped' });
+      continue;
+    }
+    rows.push({ field, uiValue, dbValue, result: valuesRoughlyMatch(uiValue, dbValue) ? 'match' : 'mismatch' });
   }
-  if (outcome.result === 'PASS') {
-    return `PASS — ${check.field}: "${outcome.actual[0]}"`;
+  return rows;
+}
+
+function formatDbMismatchLines(sourceName: string, rows: DbComparisonRow[]): string[] {
+  return rows
+    .filter((r) => r.result === 'mismatch')
+    .map((r) => `${sourceName}: ${r.field} — on-screen "${r.uiValue}" vs. My_Rush_Jobs "${r.dbValue}"`);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Renders the DB cross-check as an actual screenshot (a table of field / UI
+// value / DB value / result), the same evidence-screenshot pattern used
+// everywhere else in this suite — a text-only report section doesn't prove
+// the check ran against a real, live row. Opens a throwaway page in the
+// SAME browser context (never touches the caller's main `page`, so it can't
+// disturb its navigation state), screenshots it, then closes it.
+async function captureDbCheckEvidence(
+  page: Page,
+  sourceName: string,
+  stageKey: string,
+  rows: DbComparisonRow[],
+  outPath: string
+): Promise<void> {
+  const rowsHtml = rows
+    .map((r) => {
+      const color = r.result === 'mismatch' ? '#C00000' : r.result === 'skipped' ? '#8a8a8a' : '#1a7f37';
+      const label = r.result === 'mismatch' ? 'MISMATCH' : r.result === 'skipped' ? 'SKIPPED (blank)' : 'MATCH';
+      return `<tr>
+        <td>${escapeHtml(r.field)}</td>
+        <td>${escapeHtml(r.uiValue)}</td>
+        <td>${escapeHtml(r.dbValue)}</td>
+        <td style="color:${color};font-weight:bold;">${label}</td>
+      </tr>`;
+    })
+    .join('');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+    body { font-family: Arial, sans-serif; padding: 20px; color: #222; }
+    h2 { margin: 0 0 4px; }
+    .meta { color: #555; margin-bottom: 16px; font-size: 13px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; font-size: 13px; }
+    th { background: #f0f0f0; }
+  </style></head><body>
+    <h2>My_Rush_Jobs Cross-Check — ${escapeHtml(sourceName)}</h2>
+    <div class="meta">Stage_Key: ${escapeHtml(stageKey)} &nbsp;|&nbsp; Queried live at ${new Date().toLocaleString()}</div>
+    <table>
+      <tr><th>Field</th><th>On-Screen Value</th><th>My_Rush_Jobs Value</th><th>Result</th></tr>
+      ${rowsHtml}
+    </table>
+  </body></html>`;
+
+  const evidencePage = await page.context().newPage();
+  try {
+    await evidencePage.setContent(html);
+    await evidencePage.screenshot({ path: outPath, fullPage: true });
+  } finally {
+    await evidencePage.close();
   }
-  const matchType = check.matchType ?? 'exact';
-  return `FAIL — ${check.field}: expected ${matchType === 'contains' ? 'to contain ' : ''}"${check.expected}", found "${outcome.actual.join('" / "')}"`;
 }
 
 /**
  * Runs the full search -> Process Identity -> Details -> Roles/Entitlements ->
  * Accounts -> account-detail-drilldown pathway for one test case and writes
  * its report. Called from tests/sources/<source>/<lifecycle>.spec.ts
- * (Copley first) and from rush_regression.spec.ts for leftover multi-source cases.
+ * (Copley Lawson, then RUSH Lawson) and from rush_regression.spec.ts for leftover multi-source cases.
  */
-export async function runRegressionCase(page: Page, testCase: TestCase) {
+export async function runRegressionCase(
+  page: Page,
+  testCase: TestCase,
+  creationEvidenceEntries?: CreationEvidenceEntry[],
+  uploadFolderUrl?: string
+) {
   await page.setViewportSize({ width: 1600, height: 2000 });
 
   const primary = testCase.sources[0];
   const allSourceNames = testCase.sources.map((s) => s.name);
   const label = testCase.scenarioName;
+  // Only Stage_Keys we actually configured are known — accounts discovered
+  // beyond testCase.sources (ServiceNow SaaS, TEST RUSH AD, etc.) have no
+  // Stage_Key to look up in My_Rush_Jobs and are skipped by the DB check.
+  const stageKeyBySource = new Map(testCase.sources.map((s) => [s.name, s.stageKey]));
+  const dbCheckEnabled = isDbConfigured();
+  const databaseChecks: string[] = [];
+  const dbCheckedSources: string[] = [];
+  const databaseCheckImages: { path: string; caption: string }[] = [];
 
   await page.goto('https://rush-sb.identitynow.com/ui/d/mysailpoint');
   await page.getByRole('link', { name: 'Admin' }).click();
@@ -449,7 +548,6 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
   const accountDetailImages: { path: string; caption: string }[] = [];
   const correlationMismatches: string[] = [];
   const unconfirmedFieldSources: string[] = [];
-  const databaseChecks: string[] = [];
 
   // Identity Details page's Correlation Key — the ground-truth value every
   // correlated HR-source account's own Correlation_Key should match.
@@ -471,36 +569,24 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
     const accountFields = resolveAccountFields(sourceName, testCase, primary.name);
     const accountValues = await highlightFields(page, accountFields);
     collectBlanks(`${sourceName} Account Detail`, accountValues, blankFields);
-
-    // Database cross-check: compare the screen-captured fields against the
-    // SOA database's staging table row for this source, when a table mapping
-    // and a stage key for this specific source are both available. Only
-    // fields that were both highlighted on screen AND present as a column in
-    // the DB row are compared — a field missing from either side is not
-    // treated as a mismatch, just as not comparable.
-    const stgTable = SOURCE_TO_STG_TABLE[sourceName];
-    const sourceStageKey = testCase.sources.find((s) => s.name === sourceName)?.stageKey;
-    if (stgTable && sourceStageKey) {
+    if (isKnownHrSource && dbCheckEnabled && stageKeyBySource.has(sourceName)) {
+      const stageKey = stageKeyBySource.get(sourceName)!;
+      dbCheckedSources.push(sourceName);
       try {
-        const dbRow = await getStagingRow(stgTable, sourceStageKey);
+        const dbRow = await getStagingRow('My_Rush_Jobs', stageKey);
         if (!dbRow) {
-          databaseChecks.push(`${sourceName}: no row found in ${stgTable} for Stage_Key "${sourceStageKey}"`);
+          databaseChecks.push(`${sourceName}: no row found in My_Rush_Jobs for Stage_Key "${stageKey}"`);
         } else {
-          for (const field of accountFields) {
-            const dbValue = dbRow[field];
-            const screenValue = accountValues[field]?.[0];
-            if (dbValue === undefined || screenValue === undefined) continue;
-            if (dbValue.trim().toLowerCase() !== screenValue.trim().toLowerCase()) {
-              databaseChecks.push(`${sourceName} — ${field}: database has "${dbValue}", screen shows "${screenValue}"`);
-            }
-          }
+          const comparisonRows = buildDbComparisonRows(accountValues, dbRow);
+          databaseChecks.push(...formatDbMismatchLines(sourceName, comparisonRows));
+          const evidencePath = `temp/${label}_5b_${sourceName.replace(/\s+/g, '_')}_DBCheck.png`;
+          await captureDbCheckEvidence(page, sourceName, stageKey, comparisonRows, evidencePath);
+          databaseCheckImages.push({ path: evidencePath, caption: `${sourceName} — My_Rush_Jobs cross-check` });
         }
-        checkedSummary.push(`Database cross-check: ${sourceName} vs. ${stgTable} (Stage_Key ${sourceStageKey})`);
       } catch (err) {
         databaseChecks.push(`${sourceName}: database check failed — ${(err as Error).message}`);
       }
     }
-
     if (sourceName === primary.name) {
       // Resolve any expected-value checks that weren't found on the Details
       // page (e.g. Primary_Position, which only exists on the account page),
@@ -592,6 +678,14 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
     });
   }
 
+  if (databaseCheckImages.length > 0) {
+    sections.push({
+      title: 'Database Checks — Evidence',
+      note: 'A screenshot of the actual My_Rush_Jobs row values fetched live during this run, alongside what was captured on screen — this is the underlying data behind the Database Checks summary below.',
+      images: databaseCheckImages,
+    });
+  }
+
   const valueAssertions = (testCase.expectedValues ?? []).map(
     (check) => resolvedChecks.get(check.field) ?? formatCheckResult(check, undefined)
   );
@@ -599,26 +693,55 @@ export async function runRegressionCase(page: Page, testCase: TestCase) {
     checkedSummary.push(`Expected value assertions: ${testCase.expectedValues!.map((c) => c.field).join(', ')}`);
   }
 
+  if (dbCheckedSources.length > 0) {
+    checkedSummary.push(`Database cross-check: My_Rush_Jobs staging table vs. Account Detail (${dbCheckedSources.join(', ')})`);
+  }
+
   const reportFileName = buildReportFileName(identityName);
   const reportPath = localReportPath(reportFileName);
 
-  await buildReport(
-    {
-      sourceLabel: allSourceNames.join(' & '),
-      identityName,
-      caseId: testCase.sources.map((s) => s.stageKey).join(' / '),
-    },
-    sections,
-    reportPath,
-    checkedSummary,
-    blankFields,
-    correlationMismatches,
-    valueAssertions,
-    databaseChecks
-  );
+  const reportMetadata = {
+    sourceLabel: allSourceNames.join(' & '),
+    identityName,
+    caseId: testCase.sources.map((s) => s.stageKey).join(' / '),
+  };
+  // Only tests/creation/aggregate-and-document.spec.ts passes
+  // creationEvidenceEntries — every other caller (tests/sources/**,
+  // rush_regression.spec.ts) omits it, so this branch never changes their
+  // behavior; they keep calling buildReport() exactly as before.
+  if (creationEvidenceEntries && creationEvidenceEntries.length > 0) {
+    await buildCombinedReport(
+      reportMetadata,
+      creationEvidenceEntries,
+      sections,
+      reportPath,
+      checkedSummary,
+      blankFields,
+      correlationMismatches,
+      valueAssertions,
+      dbCheckEnabled ? databaseChecks : undefined
+    );
+  } else {
+    await buildReport(
+      reportMetadata,
+      sections,
+      reportPath,
+      checkedSummary,
+      blankFields,
+      correlationMismatches,
+      valueAssertions,
+      dbCheckEnabled ? databaseChecks : undefined
+    );
+  }
 
   // Destination is SharePoint. Stage locally → upload → delete local staging copy.
-  const published = await uploadFileToSharePointFolder(reportPath, reportFileName);
+  // A caller-provided uploadFolderUrl (only tests/creation/aggregate-and-
+  // document.spec.ts passes one, for the combined report's own dedicated
+  // folder) bypasses uploadReportForSource's normal per-source routing —
+  // every other caller omits it and keeps that routing unchanged.
+  const published = uploadFolderUrl
+    ? await uploadFileToSharePointFolder(reportPath, reportFileName, uploadFolderUrl)
+    : await uploadReportForSource(reportPath, reportFileName, primary.name);
   if (published) {
     removeLocalReportCopy(reportPath);
   } else {
