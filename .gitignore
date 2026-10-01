@@ -15,6 +15,10 @@ node_modules/
 /output/
 /temp/
 identity-factory/__pycache__/
+
+# Named test identities (see tests/config/identities.example.json)
+tests/config/identities.local.json
+
 identity-factory/.env
 identity-factory/data/*.sqlite
 identity-factory/data/*.sql

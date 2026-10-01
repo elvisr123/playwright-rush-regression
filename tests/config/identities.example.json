@@ -1,0 +1,7 @@
+{
+  "workdayPrehire": [
+    { "name": "First Last", "stageKey": "WD-000000000ER" }
+  ],
+  "workdayFuturehire": { "name": "First Last", "stageKey": "WD-000000000ER" },
+  "emailNotification": { "name": "First Last", "stageKey": "WD-000000000ER", "searchText": "FirstEE" }
+}

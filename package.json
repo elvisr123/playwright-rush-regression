@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "record:outlook-search": "node scripts/record-outlook-search.mjs"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",

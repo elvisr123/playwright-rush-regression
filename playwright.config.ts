@@ -53,7 +53,17 @@ export default defineConfig({
       dependencies: ['setup'],
       // SQL/SSMS scripts under tests/sql/ have their own project below —
       // excluded here so they don't also trigger an unneeded IdentityNow login.
-      testIgnore: /tests\/sql\//,
+      // Outlook specs also have their own projects.
+      testIgnore: [/tests\/sql\//, /outlook-login\.setup\.ts|email-notification\.spec\.ts/],
+    },
+    {
+      name: 'outlook',
+      testMatch: /email-notification\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'outlook-setup',
+      testMatch: /outlook-login\.setup\.ts/,
     },
 
     /* SQL/SSMS verification scripts — no browser, no IdentityNow login, so

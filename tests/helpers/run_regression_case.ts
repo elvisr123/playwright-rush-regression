@@ -116,6 +116,8 @@ function uniqueFields(fields: string[]): string[] {
 // these use ACCOUNT_DETAIL_FIELDS_BASE + SOURCE_FIELD_PROFILES extras.
 const KNOWN_HR_SOURCES = new Set([
   'RUSH Lawson',
+  'RUSH Workday',
+  'Rush Workday',
   'Copley Lawson',
   'ECHO Credentialed Providers',
   'Ellucian Students',
@@ -190,8 +192,15 @@ function resolveDetailFields(testCase: TestCase, primaryName: string): string[] 
   ]);
 }
 
+function fieldsBySource(record: Record<string, string[]> | undefined, sourceName: string): string[] | undefined {
+  if (!record) return undefined;
+  if (Object.prototype.hasOwnProperty.call(record, sourceName)) return record[sourceName];
+  const key = Object.keys(record).find((name) => name.trim().toLowerCase() === sourceName.trim().toLowerCase());
+  return key !== undefined ? record[key] : undefined;
+}
+
 function resolveAccountFields(sourceName: string, testCase: TestCase, primaryName: string): string[] {
-  const bySource = testCase.accountDetailFieldsBySource?.[sourceName];
+  const bySource = fieldsBySource(testCase.accountDetailFieldsBySource, sourceName);
   if (bySource) return uniqueFields(bySource);
 
   if (sourceName === primaryName && testCase.accountDetailFields) {
@@ -600,7 +609,7 @@ export async function runRegressionCase(
       }
     }
 
-    const hasExplicitFieldList = Boolean(testCase.accountDetailFieldsBySource?.[sourceName]);
+    const hasExplicitFieldList = Boolean(fieldsBySource(testCase.accountDetailFieldsBySource, sourceName));
     if (!isKnownHrSource && !hasExplicitFieldList) unconfirmedFieldSources.push(sourceName);
     checkedSummary.push(
       `${sourceName} Account Detail: ${accountFields.join(', ')}` +

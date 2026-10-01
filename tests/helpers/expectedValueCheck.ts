@@ -11,14 +11,29 @@ export type CheckOutcome = { result: 'PASS' | 'FAIL'; actual: string[] };
 // Evaluates a single expected-value check against one set of captured values.
 // Returns undefined if the field wasn't found at all (the caller tries another
 // source, or reports NOT FOUND if none has it).
+// `expected` plus any `allowed` alternates, de-duplicated case-insensitively.
+function acceptedValuesFor(check: ExpectedValueCheck): string[] {
+  const values = [check.expected, ...(check.allowed ?? [])];
+  const seen = new Set<string>();
+  return values.filter((v) => {
+    const key = v.trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function evaluateCheck(check: ExpectedValueCheck, values: Record<string, string[]> | void): CheckOutcome | undefined {
   const occurrences = values?.[check.field];
   if (!occurrences || occurrences.length === 0) return undefined;
   const matchType = check.matchType ?? 'exact';
+  const accepted = acceptedValuesFor(check);
   const matched = occurrences.some((actual) => {
     const a = actual.trim().toLowerCase();
-    const e = check.expected.trim().toLowerCase();
-    return matchType === 'contains' ? a.includes(e) : a === e;
+    return accepted.some((expected) => {
+      const e = expected.trim().toLowerCase();
+      return matchType === 'contains' ? a.includes(e) : a === e;
+    });
   });
   return { result: matched ? 'PASS' : 'FAIL', actual: occurrences };
 }

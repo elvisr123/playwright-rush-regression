@@ -1,9 +1,9 @@
 import { LifecycleState } from './lifecycles';
 
 // Per-source, per-lifecycle cases live under tests/sources/<source>/<lifecycle>.spec.ts
-// (Copley Lawson, then RUSH Lawson). SOURCE_FIELD_PROFILES below are source-wide extras applied
-// on every lifecycle; put lifecycle-only highlights on the spec's detailExtras /
-// accountDetailExtras instead.
+// (Copley Lawson, RUSH Lawson, RUSH Workday, NERM, ECHO, Ellucian). SOURCE_FIELD_PROFILES
+// below are source-wide extras applied on every lifecycle; put lifecycle-only highlights
+// on the spec's detailExtras / accountDetailExtras instead.
 //
 // TEST_CASES is the leftover multi-source list used by rush_regression.spec.ts.
 
@@ -20,11 +20,15 @@ export interface ExpectedValueCheck {
   field: string;
   /** Expected value to compare the field's actual value against. */
   expected: string;
+  /** Extra accepted values (case-insensitive exact). `expected` always counts too. */
+  allowed?: string[];
   /** 'exact' = case-insensitive full match (default). 'contains' = substring
       match — use this for fields like Distinguished Name / Manager DN where
       only part of the value (e.g. an OU=) is what's actually being verified. */
   matchType?: 'exact' | 'contains';
 }
+
+export type EmailAudience = 'manager' | 'user';
 
 export interface TestCase {
   /** Used for file names, the test title, and the report title fallback. Keep it unique. */
@@ -60,6 +64,19 @@ export interface TestCase {
       targets and would just produce noise. Produces a "Value Assertions"
       report section. */
   expectedValues?: ExpectedValueCheck[];
+  /** Drop the account-search page from the Word report (still used to open the identity). */
+  omitSearchFromReport?: boolean;
+  /** Visit every matching account row, including two accounts on the same source. */
+  keepDuplicateAccounts?: boolean;
+  /** Do not yellow-highlight OU= values on HR account pages. */
+  skipOuHighlight?: boolean;
+  /** Highlight Stage Key on the Accounts summary. Defaults to true. */
+  highlightStageKeyOnAccounts?: boolean;
+  /**
+   * Provisioning email screenshot in the Word report.
+   * Defaults: prehire → manager, active → user. Set `none` to skip.
+   */
+  emailNotification?: EmailAudience | 'none';
 }
 
 export interface SourceFieldProfile {
@@ -80,6 +97,12 @@ export const SOURCE_FIELD_PROFILES: Record<string, SourceFieldProfile> = {
     // Multiple possible assignments (Primary_Position), and both Legal Hold
     // and Manager Hold apply on termination per the design doc. Relationship_Status
     // moved to the shared account-detail base since it's cross-source, not RUSH-only.
+    accountDetailExtras: ['Primary_Position', 'Legal_Hold', 'Manager_Hold'],
+  },
+  'RUSH Workday': {
+    accountDetailExtras: ['Primary_Position', 'Legal_Hold', 'Manager_Hold'],
+  },
+  'Rush Workday': {
     accountDetailExtras: ['Primary_Position', 'Legal_Hold', 'Manager_Hold'],
   },
   'ECHO Credentialed Providers': {
