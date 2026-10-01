@@ -5,9 +5,8 @@ code, address, ...) — constant for every identity generated on that source —
 as opposed to the identity-specific fields (name, dates, generated IDs) built
 by user_payload.build_my_rush_jobs_row's scaffold.
 
-"copley", "workday", and "rush" are populated today; "echo", "ellucian", and
-"nerm" still raise NotImplementedError until a real reference row is
-available for them.
+All 6 sources ("copley", "rush", "echo", "ellucian", "nerm", "workday") are
+populated as of 2026-10-01.
 
 To add a source: pull a real, known-good reference row for it — e.g. via
 tests/helpers/dbClient.ts's getStagingRow() against a Stage_Key already used
@@ -112,11 +111,145 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         # pre-aggregation INSERT should carry. Left to the scaffold's
         # default (display name / a gmail.com placeholder), same as Copley.
     },
-    # "echo": Phase 3 — populate from a live reference row (EC-9512021TESTCL902ER)
-    # "ellucian": Phase 3 — no known reference Stage_Key exists yet; needs a
-    #             fresh SELECT TOP 5 * FROM My_Rush_Jobs WHERE Source_Name =
-    #             'Ellucian Students' on the VDI first.
-    # "nerm": Phase 3 — populate from a live reference row (NE-19825552TEST000PDPPL)
+    "echo": {
+        # Extracted from a real ECHO Credentialed Providers account (OnyxPD
+        # Oliver, 2026-10-01 — a Word doc of SailPoint screenshots the user
+        # supplied, since this identity turned out to have no My_Rush_Jobs
+        # row reachable via a direct SELECT).
+        "Source_Name": "ECHO Credentialed Providers",
+        "Email_Required": "Yes",
+        "User_Type": None,
+        "Employee_Level": None,
+        "Employee_Type": "Provider",
+        "Country": "US",
+        "City": "Chicago",
+        "State": "IL",
+        "Street_Address": "1461 S Blue Island Ave",
+        "Postal_Code": "60608",
+        "Company_Name": "RUMC",
+        "Organization": None,
+        "Vendor_Code": "MSO",
+        "Location": None,
+        "Location_Code": "RUMC",
+        "Department_Name": "Orthopaedic Surgery",
+        "Department": None,
+        "Cost_Center": None,
+        "Title": "Occupational Therapist",
+        "Job_Code": "2302",
+        "Job_Family": None,
+        # Per the Rush design doc, ECHO Credentialed Providers identities
+        # are assigned the default manager (default.manager) in ISC, not a
+        # real person — matches this sample's own identity-cube view
+        # ("Manager: default.manager"). The raw ACCOUNT view's Manager_Name
+        # field showed "ACTIVE REGULAR" instead, which looks like a data
+        # misalignment in this specific sandbox record (that value belongs
+        # under Relationship_Status, not Manager_Name) — used the
+        # design-doc-confirmed value here rather than copying it blind.
+        "Manager_Name": "default.manager",
+        "Primary_Position": "YES",
+        "Relationship_Status": "ACTIVE REGULAR",
+        "Salary_Structure": None,
+        "Manager_Username": None,
+        "Manager_Employee_ID": None,
+        "OneUp_Manager_Employee_ID": None,
+        "OneUp_Manager_Network_ID": None,
+        "Work_Phone_Number": None,
+        "Work_Hours": None,
+        "Do_Not_Rehire": None,
+        "Working_Remotely": None,
+        "Manager_Hold": None,
+        "Legal_Hold": None,
+    },
+    "ellucian": {
+        # Extracted from a real Ellucian Students account (MakaiPD S Myers,
+        # 2026-10-01, same Word-doc-of-screenshots source as "echo" above).
+        # Many fields are genuinely blank for this source in the real
+        # sample, not a gap — kept as None rather than guessed.
+        "Source_Name": "Ellucian Students",
+        "Email_Required": None,
+        "User_Type": None,
+        "Employee_Level": None,
+        "Employee_Type": "Student",
+        "Country": None,
+        "City": None,
+        "State": None,
+        "Street_Address": None,
+        "Postal_Code": None,
+        "Company_Name": None,
+        "Organization": None,
+        "Vendor_Code": "RUS",
+        "Location": None,
+        "Location_Code": None,
+        "Department_Name": "Comm Systems & Mental Hlth Nsg",
+        "Department": "CMHH",
+        "Cost_Center": None,
+        "Title": None,
+        "Job_Code": None,
+        "Job_Family": None,
+        # Per the Rush design doc, Ellucian Students identities are
+        # assigned the default manager (default.manager) in ISC — matches
+        # this real sample directly (both the raw account and identity-cube
+        # views show "default.manager").
+        "Manager_Name": "default.manager",
+        "Primary_Position": "YES",
+        "Relationship_Status": None,
+        "Salary_Structure": None,
+        "Manager_Username": None,
+        "Manager_Employee_ID": None,
+        "OneUp_Manager_Employee_ID": None,
+        "OneUp_Manager_Network_ID": None,
+        "Work_Phone_Number": None,
+        "Work_Hours": None,
+        "Do_Not_Rehire": None,
+        "Working_Remotely": None,
+        "Manager_Hold": None,
+        "Legal_Hold": None,
+    },
+    "nerm": {
+        # Extracted from a real Non-Employee Workforce account (MarleePD
+        # Greene, 2026-10-01, same Word-doc-of-screenshots source as above)
+        # — consistent with Pooja Vijay's NERM account shown earlier this
+        # session (identical Company_Name/Vendor_Code/Location).
+        "Source_Name": "Non-Employee Workforce",
+        "Email_Required": "True",
+        "User_Type": None,
+        "Employee_Level": None,
+        "Employee_Type": "Non-Employee",
+        "Country": "US",
+        "City": None,
+        "State": None,
+        "Street_Address": None,
+        "Postal_Code": None,
+        "Company_Name": "Rush Virtual Center",
+        "Organization": None,
+        "Vendor_Code": "44488",
+        "Location": "1620 W.Harrison St",
+        "Location_Code": "60616",
+        "Department_Name": "dermatology",
+        "Department": "DERM",
+        "Cost_Center": None,
+        "Title": "system leadership",
+        "Job_Code": "111195",
+        "Job_Family": None,
+        # Per the Rush design doc, Non-Employee Workforce identities get a
+        # "valid manager populated from source data" (not a default) —
+        # matches this real sample having an actual named manager rather
+        # than default.manager, unlike ECHO/Ellucian above.
+        "Manager_Name": "acopela3",
+        "Primary_Position": "YES",
+        "Relationship_Status": None,
+        "Salary_Structure": None,
+        "Manager_Username": None,
+        "Manager_Employee_ID": None,
+        "OneUp_Manager_Employee_ID": None,
+        "OneUp_Manager_Network_ID": None,
+        "Work_Phone_Number": "5712882223",
+        "Work_Hours": None,
+        "Do_Not_Rehire": "no",
+        "Working_Remotely": None,
+        "Manager_Hold": None,
+        "Legal_Hold": "no",
+    },
     "workday": {
         # Extracted from a real Rush Workday INSERT sample (2026-09-15), plus
         # a user-provided old-vs-new Workday field mapping clarification.
