@@ -316,7 +316,8 @@ def structural_fields(source_key: str) -> dict:
     if template is None:
         raise NotImplementedError(
             f'No structural attribute template for source "{source_key}" yet. '
-            "Only Copley Lawson is filled in — populate SOURCE_TEMPLATES[...] "
-            "from a live reference row before generating this source. See AGENTS.md."
+            f"Populated sources: {', '.join(sorted(SOURCE_TEMPLATES))}. Populate "
+            "SOURCE_TEMPLATES[...] from a live reference row before generating "
+            "this source. See AGENTS.md."
         )
     return template
