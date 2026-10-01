@@ -32,7 +32,13 @@ SOURCES = {
     "echo": {"name": "ECHO Credentialed Providers", "prefix": "EC"},
     "ellucian": {"name": "Ellucian Students", "prefix": "ES"},
     "nerm": {"name": "Non-Employee Workforce", "prefix": "NE"},
-    "workday": {"name": "Rush Workday", "prefix": "WD"},
+    # "name" here is used for reporting and the SailPoint API aggregation
+    # lookup (getSourceIdByName) — "RUSH Workday" per tests/config/sources.ts
+    # (the canonical name confirmed there, 2026-10-01), NOT the same as the
+    # My_Rush_Jobs.Source_Name column value in source_templates.py, which
+    # stays "Rush Workday" (the literal value from a real 2026-09-15 INSERT
+    # sample) — these two can legitimately differ.
+    "workday": {"name": "RUSH Workday", "prefix": "WD"},
 }
 
 # Column order matches the VDI INSERT into [SOA].[dbo].[My_Rush_Jobs].
