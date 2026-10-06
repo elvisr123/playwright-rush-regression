@@ -35,7 +35,7 @@ import { LifecycleState } from '../config/lifecycles';
 // scripts/ssms-capture.ps1 — this never launches or logs into SSMS itself).
 //
 // Hand-edit these, same convention as every other spec in this repo:
-const SOURCES_TO_CREATE = ['workday']; // source keys from identity-factory/user_payload.py's SOURCES — only 'copley' and 'workday' have a real attribute template so far.
+const SOURCES_TO_CREATE = ['echo']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
 const LIFECYCLE: LifecycleState = 'active';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
@@ -82,7 +82,7 @@ const CORRELATION_KEY: string | undefined = undefined;
 // default: the aggregation-trigger endpoint itself hasn't been verified
 // against live SailPoint API docs yet (see sailpointClient.ts's header
 // comment) — turn this on deliberately once you've confirmed it works.
-const TRIGGER_AGGREGATION = false;
+const TRIGGER_AGGREGATION = true;
 // Dedicated SharePoint folder for identity-creation evidence, already
 // created by a teammate — a SIBLING of testplaywright_testcases under
 // Rush_TestCases, not a child of it, so this is its own direct sharing URL
@@ -331,7 +331,13 @@ test('Create identity — INSERT + verify via SSMS', async () => {
 
   const aggregationFailures: string[] = [];
   if (TRIGGER_AGGREGATION && isSailPointConfigured()) {
-    const sourceNames = [...new Set(mergedRows.map((r) => r.sourceName))];
+    // Deliberately verifiedRows, not mergedRows: mergedRows also carries
+    // sources from an earlier run (e.g. Workday created last week), kept in
+    // the handoff JSON when adding a new source to that same identity today.
+    // Aggregation must only fire for the source(s) this run just created —
+    // re-aggregating an untouched prior source every time another source is
+    // added would be redundant at best.
+    const sourceNames = [...new Set(verifiedRows.map((r) => r.sourceName))];
     for (const sourceName of sourceNames) {
       console.log(`Triggering SailPoint aggregation for "${sourceName}"...`);
       try {

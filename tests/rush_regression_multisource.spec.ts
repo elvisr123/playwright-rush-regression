@@ -25,11 +25,62 @@ interface MultiSourceCase {
   sources: string[];
 }
 
+// Kept in sync with tests/config/testcases.ts's TEST_CASES — same 10
+// scenarios, same order. "<PREFIX>-PENDING_STAGE_KEY" marks an identity that
+// hasn't been created yet (see AGENTS.md); replace with the real Stage_Key
+// once that identity is created via the SSMS pipeline and aggregated into
+// SailPoint. RUSH Workday is intentionally not covered — no Workday identity
+// has been created yet.
 const TEST_CASES: MultiSourceCase[] = [
   {
     scenarioName: 'Rush_and_Eco_6',
-    stageKeys: ['RL-9512021TESTCL902ER', 'EC-9512021TESTCL902ER'],
+    stageKeys: ['RL-9001179087238267ER', 'EC-9001179087238267ER'],
     sources: ['RUSH Lawson', 'ECHO Credentialed Providers'],
+  },
+  {
+    scenarioName: 'Rush_and_Copley',
+    stageKeys: ['RL-PENDING_STAGE_KEY', 'CL-PENDING_STAGE_KEY'],
+    sources: ['RUSH Lawson', 'Copley Lawson'],
+  },
+  {
+    scenarioName: 'Rush_and_Nerm',
+    stageKeys: ['RL-PENDING_STAGE_KEY', 'NE-PENDING_STAGE_KEY'],
+    sources: ['RUSH Lawson', 'Non-Employee Workforce'],
+  },
+  {
+    scenarioName: 'Rush_and_Ellucian',
+    stageKeys: ['RL-PENDING_STAGE_KEY', 'ES-PENDING_STAGE_KEY'],
+    sources: ['RUSH Lawson', 'Ellucian Students'],
+  },
+  {
+    scenarioName: 'Copley_and_Nerm',
+    stageKeys: ['CL-PENDING_STAGE_KEY', 'NE-PENDING_STAGE_KEY'],
+    sources: ['Copley Lawson', 'Non-Employee Workforce'],
+  },
+  {
+    scenarioName: 'Copley_and_Echo',
+    stageKeys: ['CL-PENDING_STAGE_KEY', 'EC-PENDING_STAGE_KEY'],
+    sources: ['Copley Lawson', 'ECHO Credentialed Providers'],
+  },
+  {
+    scenarioName: 'Copley_and_Ellucian',
+    stageKeys: ['CL-PENDING_STAGE_KEY', 'ES-PENDING_STAGE_KEY'],
+    sources: ['Copley Lawson', 'Ellucian Students'],
+  },
+  {
+    scenarioName: 'Nerm_and_Echo',
+    stageKeys: ['NE-PENDING_STAGE_KEY', 'EC-PENDING_STAGE_KEY'],
+    sources: ['Non-Employee Workforce', 'ECHO Credentialed Providers'],
+  },
+  {
+    scenarioName: 'Nerm_and_Ellucian',
+    stageKeys: ['NE-PENDING_STAGE_KEY', 'ES-PENDING_STAGE_KEY'],
+    sources: ['Non-Employee Workforce', 'Ellucian Students'],
+  },
+  {
+    scenarioName: 'Echo_and_Ellucian',
+    stageKeys: ['EC-PENDING_STAGE_KEY', 'ES-PENDING_STAGE_KEY'],
+    sources: ['ECHO Credentialed Providers', 'Ellucian Students'],
   },
 ];
 

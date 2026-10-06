@@ -121,12 +121,82 @@ export const SOURCE_FIELD_PROFILES: Record<string, SourceFieldProfile> = {
   },
 };
 
+// Multi-source regression scenarios — one identity per entry, verified across
+// its sources' correlated accounts in the sandbox UI. stageKey placeholders of
+// the form "<PREFIX>-PENDING_STAGE_KEY" mark identities that haven't been
+// created yet (see AGENTS.md); replace with the real Stage_Key once that
+// identity is created via the SSMS pipeline and aggregated into SailPoint.
+// RUSH Workday is intentionally not covered here — no Workday identity has
+// been created yet.
 export const TEST_CASES: TestCase[] = [
   {
     scenarioName: 'Rush_and_Eco_6',
     sources: [
-      { name: 'RUSH Lawson', stageKey: 'RL-9512021TESTCL902ER' },
-      { name: 'ECHO Credentialed Providers', stageKey: 'EC-9512021TESTCL902ER' },
+      { name: 'RUSH Lawson', stageKey: 'RL-9001179087238267ER' },
+      { name: 'ECHO Credentialed Providers', stageKey: 'EC-9001179087238267ER' },
+    ],
+  },
+  {
+    scenarioName: 'Rush_and_Copley',
+    sources: [
+      { name: 'RUSH Lawson', stageKey: 'RL-PENDING_STAGE_KEY' },
+      { name: 'Copley Lawson', stageKey: 'CL-PENDING_STAGE_KEY' },
+    ],
+  },
+  {
+    scenarioName: 'Rush_and_Nerm',
+    sources: [
+      { name: 'RUSH Lawson', stageKey: 'RL-PENDING_STAGE_KEY' },
+      { name: 'Non-Employee Workforce', stageKey: 'NE-PENDING_STAGE_KEY' },
+    ],
+  },
+  {
+    scenarioName: 'Rush_and_Ellucian',
+    sources: [
+      { name: 'RUSH Lawson', stageKey: 'RL-PENDING_STAGE_KEY' },
+      { name: 'Ellucian Students', stageKey: 'ES-PENDING_STAGE_KEY' },
+    ],
+  },
+  {
+    scenarioName: 'Copley_and_Nerm',
+    sources: [
+      { name: 'Copley Lawson', stageKey: 'CL-PENDING_STAGE_KEY' },
+      { name: 'Non-Employee Workforce', stageKey: 'NE-PENDING_STAGE_KEY' },
+    ],
+  },
+  {
+    scenarioName: 'Copley_and_Echo',
+    sources: [
+      { name: 'Copley Lawson', stageKey: 'CL-PENDING_STAGE_KEY' },
+      { name: 'ECHO Credentialed Providers', stageKey: 'EC-PENDING_STAGE_KEY' },
+    ],
+  },
+  {
+    scenarioName: 'Copley_and_Ellucian',
+    sources: [
+      { name: 'Copley Lawson', stageKey: 'CL-PENDING_STAGE_KEY' },
+      { name: 'Ellucian Students', stageKey: 'ES-PENDING_STAGE_KEY' },
+    ],
+  },
+  {
+    scenarioName: 'Nerm_and_Echo',
+    sources: [
+      { name: 'Non-Employee Workforce', stageKey: 'NE-PENDING_STAGE_KEY' },
+      { name: 'ECHO Credentialed Providers', stageKey: 'EC-PENDING_STAGE_KEY' },
+    ],
+  },
+  {
+    scenarioName: 'Nerm_and_Ellucian',
+    sources: [
+      { name: 'Non-Employee Workforce', stageKey: 'NE-PENDING_STAGE_KEY' },
+      { name: 'Ellucian Students', stageKey: 'ES-PENDING_STAGE_KEY' },
+    ],
+  },
+  {
+    scenarioName: 'Echo_and_Ellucian',
+    sources: [
+      { name: 'ECHO Credentialed Providers', stageKey: 'EC-PENDING_STAGE_KEY' },
+      { name: 'Ellucian Students', stageKey: 'ES-PENDING_STAGE_KEY' },
     ],
   },
 ];

@@ -1,4 +1,4 @@
-// Minimal SailPoint ISC (IdentityNow) v3 API client for triggering source
+// Minimal SailPoint ISC (IdentityNow) API client for triggering source
 // aggregation programmatically — closes the gap this pipeline has always
 // left manual (see AGENTS.md: "SailPoint source aggregation... is a
 // separate, not-yet-built phase"). Uses OAuth2 client-credentials, the
@@ -7,18 +7,19 @@
 // dependency, matches nothing else in this codebase using a different HTTP
 // client.
 //
-// IMPORTANT — aggregation trigger still not fully working, tracked live:
+// Aggregation trigger — resolved 2026-10-06, confirmed live against Copley
+// Lawson:
 // - Attempt 1, /v3/sources/{id}/load-accounts: 404, with the gateway's own
-//   error showing a doubled "sources/sources" path segment — a strong sign
-//   that path isn't a real registered v3 sub-resource at all.
-// - Attempt 2 (current), /sources/v1/{id}/load-accounts: 400 "content is
-//   semantically invalid" — real progress, this path IS routed/recognized,
-//   the empty `{}` body we send just doesn't satisfy whatever schema it
-//   expects. Next step: find the correct request body (SailPoint API docs,
-//   https://developer.sailpoint.com/docs/api/v3, or whoever's tenant-admin-
-//   familiar) and update triggerAggregation()'s POST body accordingly.
-// The task-status response shape (TaskStatus) is still unverified too —
-// check that once the trigger call itself succeeds.
+//   error showing a doubled "sources/sources" path segment — that path was
+//   never a real registered v3 sub-resource.
+// - Attempt 2, /sources/v1/{id}/load-accounts with an empty JSON body: 400
+//   "content is semantically invalid" — routed correctly, body still wrong.
+// - Attempt 3 (current, confirmed working): /beta/sources/{id}/load-accounts
+//   with a multipart FormData body containing disableOptimization=true —
+//   this is what the real "Load Accounts" UI action sends. Verified live:
+//   returned a real task ID for Copley Lawson.
+// SAILPOINT_BASE_URL must be the tenant API root only (no /beta, /v3, or
+// /sources) — enforced in config() below.
 
 interface SailPointConfig {
   baseUrl: string;
@@ -33,8 +34,16 @@ function config(): SailPointConfig {
       'Missing SAILPOINT_BASE_URL / SAILPOINT_CLIENT_ID / SAILPOINT_CLIENT_SECRET in .env — required for aggregation automation.'
     );
   }
+  const baseUrl = SAILPOINT_BASE_URL.trim().replace(/\/+$/, '');
+  const parsedUrl = new URL(baseUrl);
+  if (parsedUrl.pathname !== '/' || parsedUrl.search || parsedUrl.hash) {
+    throw new Error(
+      'SAILPOINT_BASE_URL must be the tenant API root, for example ' +
+        'https://<tenant>.api.identitynow.com. Do not include /beta, /v3, or /sources.'
+    );
+  }
   return {
-    baseUrl: SAILPOINT_BASE_URL.replace(/\/+$/, ''),
+    baseUrl,
     clientId: SAILPOINT_CLIENT_ID,
     clientSecret: SAILPOINT_CLIENT_SECRET,
   };
@@ -70,10 +79,15 @@ async function getAccessToken(): Promise<string> {
 async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const { baseUrl } = config();
   const token = await getAccessToken();
-  const res = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: { ...(init.headers || {}), Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-  });
+  const headers = new Headers(init.headers);
+  headers.set('Authorization', `Bearer ${token}`);
+  if (init.body instanceof FormData) {
+    // Let fetch generate its own Content-Type with the multipart boundary.
+    headers.delete('Content-Type');
+  } else {
+    headers.set('Content-Type', 'application/json');
+  }
+  const res = await fetch(`${baseUrl}${path}`, { ...init, headers });
   if (!res.ok) {
     throw new Error(`SailPoint API ${init.method || 'GET'} ${path} failed (${res.status}): ${await res.text()}`);
   }
@@ -106,16 +120,25 @@ export async function getSourceIdByName(sourceName: string): Promise<string> {
   return match.id;
 }
 
-// See the file-header note — not verified live.
-const AGGREGATE_PATH = (sourceId: string) => `/sources/v1/${sourceId}/load-accounts`;
+// Confirmed live (2026-10-06, against Copley Lawson) — see file-header note.
+const AGGREGATE_PATH = (sourceId: string) => `/beta/sources/${sourceId}/load-accounts`;
 
 /** Kicks off account aggregation for a source. Returns immediately with a task ID — aggregation itself runs async. */
 export async function triggerAggregation(sourceId: string): Promise<string> {
-  const res = await apiFetch(AGGREGATE_PATH(sourceId), { method: 'POST', body: JSON.stringify({}) });
+  const form = new FormData();
+  form.append('disableOptimization', 'true');
+  console.log(`Triggering aggregation for source ${sourceId}: POST ${AGGREGATE_PATH(sourceId)}`);
+  const res = await apiFetch(AGGREGATE_PATH(sourceId), {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+    body: form,
+  });
+  console.log(`SailPoint aggregation trigger HTTP status: ${res.status}`);
   const task = (await res.json()) as { id?: string };
   if (!task.id) {
     throw new Error(`SailPoint aggregation trigger for source ${sourceId} returned no task ID: ${JSON.stringify(task)}`);
   }
+  console.log(`SailPoint aggregation task ID: ${task.id}`);
   return task.id;
 }
 
