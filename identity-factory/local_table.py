@@ -19,6 +19,16 @@ def _connect() -> sqlite3.Connection:
     conn.execute(
         f'CREATE TABLE IF NOT EXISTS My_Rush_Jobs ("{MY_RUSH_JOBS_COLUMNS[0]}" TEXT PRIMARY KEY, {rest})'
     )
+    # CREATE TABLE IF NOT EXISTS is a no-op on an already-existing local
+    # file — a .sqlite created before a column was added to
+    # MY_RUSH_JOBS_COLUMNS (e.g. Academic_Program/School, 2026-10-08) is
+    # left on the old schema and INSERTs into the new column fail. Self-heal
+    # by adding whatever's missing, so this doesn't recur on every teammate's
+    # machine each time the schema grows.
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(My_Rush_Jobs)")}
+    for column in MY_RUSH_JOBS_COLUMNS:
+        if column not in existing:
+            conn.execute(f'ALTER TABLE My_Rush_Jobs ADD COLUMN "{column}" TEXT')
     return conn
 
 
