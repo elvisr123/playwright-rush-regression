@@ -20,6 +20,9 @@ from __future__ import annotations
 SOURCE_TEMPLATES: dict[str, dict] = {
     "copley": {
         "Source_Name": "Copley Lawson",
+        # Per user request (2026-10-08): leave Username unset for every
+        # source, not just Workday/Ellucian — see AGENTS.md.
+        "Username": None,
         "User_Type": "RCMC",
         "Employee_Level": "NURSE",
         "Employee_Type": "EMPLOYEE",
@@ -103,13 +106,14 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         "Working_Remotely": "No",
         "Manager_Hold": None,
         "Legal_Hold": None,
-        # Username/Work_Email deliberately NOT overridden here (unlike
-        # Workday's explicit None) — the real sample's "esanders" /
-        # "Evelyn_Sanders@rushtst.com" look like AD-provisioned values
-        # synced back into the source after account creation (same pattern
-        # documented for Copley's real samples), not what a fresh
-        # pre-aggregation INSERT should carry. Left to the scaffold's
-        # default (display name / a gmail.com placeholder), same as Copley.
+        # Username was deliberately left un-overridden here through
+        # 2026-10-01 — the real sample's "esanders" looked like an
+        # AD-provisioned value synced back post-creation, not something a
+        # fresh pre-aggregation INSERT should carry. Superseded 2026-10-08:
+        # user requested Username=None for every source, not just
+        # Workday/Ellucian — see AGENTS.md. Work_Email is unaffected, still
+        # left to the scaffold default.
+        "Username": None,
     },
     "echo": {
         # Extracted from a real ECHO Credentialed Providers account (OnyxPD
@@ -117,6 +121,9 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         # supplied, since this identity turned out to have no My_Rush_Jobs
         # row reachable via a direct SELECT).
         "Source_Name": "ECHO Credentialed Providers",
+        # Per user request (2026-10-08): leave Username unset for every
+        # source, not just Workday/Ellucian — see AGENTS.md.
+        "Username": None,
         "Email_Required": "Yes",
         "User_Type": None,
         "Employee_Level": None,
@@ -227,6 +234,9 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         # — consistent with Pooja Vijay's NERM account shown earlier this
         # session (identical Company_Name/Vendor_Code/Location).
         "Source_Name": "Non-Employee Workforce",
+        # Per user request (2026-10-08): leave Username unset for every
+        # source, not just Workday/Ellucian — see AGENTS.md.
+        "Username": None,
         "Email_Required": "True",
         "User_Type": None,
         "Employee_Level": None,
