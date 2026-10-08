@@ -118,7 +118,13 @@ MY_RUSH_JOBS_COLUMNS = (
 )
 
 
-def lifecycle_dates(lifecycle: str) -> dict:
+def lifecycle_dates(lifecycle: str, start_date: str | None = None) -> dict:
+    """start_date (YYYY-MM-DD), if given, overrides the computed Start_Date/
+    Original_Start_Date only - End_Date/IIQDisabled/Status still come from
+    `lifecycle` and today's date as usual, so e.g. an "active" identity with
+    a 2025 start_date still reads as currently active (not yet ended),
+    just with a real historical start. Added 2026-10-08 per user request
+    (generating active identities with a real 2025 Start_Date)."""
     today = date.today()
     if lifecycle == "futurehire":
         start, end, disabled, status = today + timedelta(days=35), today + timedelta(days=180), True, "Disabled"
@@ -138,10 +144,11 @@ def lifecycle_dates(lifecycle: str) -> dict:
         start, end, disabled, status = today - timedelta(days=1), today + timedelta(days=180), False, "Active"
     else:
         raise SystemExit(f"Unknown lifecycle: {lifecycle}")
+    start_iso = start_date if start_date else start.isoformat()
     return {
-        "Start_Date": start.isoformat(),
+        "Start_Date": start_iso,
         "End_Date": end.isoformat(),
-        "Original_Start_Date": start.isoformat(),
+        "Original_Start_Date": start_iso,
         "IIQDisabled": "true" if disabled else "false",
         "Status": status,
     }
@@ -232,12 +239,18 @@ def build_my_rush_jobs_row(
     lifecycle: str,
     birth_date: str | None = None,
     correlation_key: str | None = None,
+    start_date: str | None = None,
 ) -> dict:
     """One fully populated My_Rush_Jobs row: identity scaffold (this
     function — name/date/generated-ID fields, the same for every source)
     merged with the source's structural template (source_templates.py —
     department/manager/location/job-code fields, constant per source).
     Same shape as the VDI INSERT.
+
+    start_date (YYYY-MM-DD), if given, overrides Start_Date/
+    Original_Start_Date only — see lifecycle_dates(). Same
+    generate-once-share-across-sources rule as birth_date applies if used
+    with a multi-source identity.
 
     birth_date must be generated ONCE per identity and passed in explicitly
     by multi-source callers (generate_identity.py) — calling this per source
@@ -255,7 +268,7 @@ def build_my_rush_jobs_row(
     identity created before this default existed)."""
     given = f"{first}{INITIALS}"
     display = f"{given} {last}"
-    dates = lifecycle_dates(lifecycle)
+    dates = lifecycle_dates(lifecycle, start_date)
     user_id = number[-6:]
     email = f"{given}{last}@gmail.com"
     scaffold = {

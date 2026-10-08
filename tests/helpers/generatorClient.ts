@@ -43,6 +43,12 @@ export interface GenerateOptions {
    * exact value from the existing account/identity in the SailPoint UI.
    */
   correlationKey?: string;
+  /**
+   * Override Start_Date/Original_Start_Date (YYYY-MM-DD) instead of the
+   * lifecycle's computed default (e.g. "active" normally uses yesterday).
+   * End_Date/Status/IIQDisabled still come from `lifecycle` as usual.
+   */
+  startDate?: string;
 }
 
 /**
@@ -92,6 +98,7 @@ export function runGenerator(
   if (opts.number) args.push('--number', opts.number);
   if (opts.birthDate) args.push('--birth-date', opts.birthDate);
   if (opts.correlationKey) args.push('--correlation-key', opts.correlationKey);
+  if (opts.startDate) args.push('--start-date', opts.startDate);
 
   const [pythonCmd, ...pythonPrefixArgs] = resolvePython();
   const stdout = execFileSync(pythonCmd, [...pythonPrefixArgs, ...args], { encoding: 'utf8', timeout: 60_000 });

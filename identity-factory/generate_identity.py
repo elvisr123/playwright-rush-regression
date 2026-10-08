@@ -137,6 +137,17 @@ def main() -> None:
             "existing account/identity in the SailPoint UI or a DB SELECT."
         ),
     )
+    parser.add_argument(
+        "--start-date", default=None, dest="start_date",
+        help=(
+            "Override Start_Date/Original_Start_Date (YYYY-MM-DD) instead "
+            "of the lifecycle's computed default (e.g. 'active' normally "
+            "uses yesterday). End_Date/Status/IIQDisabled still come from "
+            "--lifecycle as usual, so e.g. an 'active' identity with a "
+            "2025 --start-date still reads as currently active, just with "
+            "a real historical start."
+        ),
+    )
     args = parser.parse_args()
 
     if args.number and not (args.first and args.last):
@@ -168,7 +179,7 @@ def main() -> None:
         cfg = SOURCES[source_key]
         key = stage_key(cfg["prefix"], number)
         row = build_my_rush_jobs_row(
-            source_key, key, number, first, last, args.lifecycle, birth_date, args.correlation_key
+            source_key, key, number, first, last, args.lifecycle, birth_date, args.correlation_key, args.start_date
         )
         save_row(row)
         append_identity(args.lifecycle, row)

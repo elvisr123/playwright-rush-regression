@@ -72,6 +72,11 @@ const LAST: string | undefined = undefined;
 const NUMBER: string | undefined = undefined;
 const BIRTH_DATE: string | undefined = undefined; // 'YYYY-MM-DD'
 const CORRELATION_KEY: string | undefined = undefined;
+// Override Start_Date/Original_Start_Date instead of the lifecycle's
+// computed default (e.g. 'active' normally uses yesterday) — e.g. set to a
+// 2025 date for a currently-active identity with a real historical start.
+// End_Date/Status/IIQDisabled still come from LIFECYCLE as usual.
+const START_DATE: string | undefined = undefined; // 'YYYY-MM-DD'
 // Opt-in: automatically trigger + wait for SailPoint source aggregation via
 // the API after every row is INSERTed and DB-verified below, instead of
 // aggregating manually in the sandbox UI (tests/helpers/sailpointClient.ts).
@@ -140,6 +145,7 @@ test('Create identity — INSERT + verify via SSMS', async () => {
     number: NUMBER,
     birthDate: BIRTH_DATE,
     correlationKey: CORRELATION_KEY,
+    startDate: START_DATE,
   });
   console.log(`Generated: ${generated.firstName} ${generated.lastName} (${generated.rows.length} row(s))`);
 
