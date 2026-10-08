@@ -55,6 +55,22 @@ if (-not $proc) {
 }
 
 Write-Output "Found: $($proc.MainWindowTitle)"
+
+# Confirmed live (2026-10-08): a heavily-loaded SSMS instance (dozens of
+# accumulated query tabs from a long testing session - this script always
+# opens a new tab and never closes old ones) can go unresponsive for
+# stretches. When that happens every assumption below breaks silently:
+# SendKeys gets queued instead of delivered immediately (looks like the
+# INSERT/paste/execute step was skipped), and GetWindowRect can return a
+# degenerate near-zero rectangle (a corrupt, few-hundred-byte screenshot)
+# because the window wasn't in a normal painted state when captured. Fail
+# fast with a clear message instead of silently producing garbage - the fix
+# is almost always just closing out old query tabs in SSMS.
+if (-not $proc.Responding) {
+    Write-Error "SSMS is not responding (window: '$($proc.MainWindowTitle)'). This usually means too many accumulated query tabs are bogging it down - close old ones in SSMS and re-run."
+    exit 1
+}
+
 $hwnd = $proc.MainWindowHandle
 
 [SsmsCaptureWin32]::ShowWindow($hwnd, $SW_RESTORE) | Out-Null
