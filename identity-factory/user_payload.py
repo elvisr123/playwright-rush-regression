@@ -104,6 +104,17 @@ MY_RUSH_JOBS_COLUMNS = (
     "Working_Remotely",
     "Manager_Hold",
     "Legal_Hold",
+    # Live My_Rush_Jobs has 77 columns total; this tuple only models the 61
+    # this pipeline actually sets. Academic_Program/School (cols 70/73 in
+    # the live schema) were added 2026-10-08 because a live mandatory-fields
+    # check requires them non-null/non-empty for Ellucian Students — see
+    # AGENTS.md. The other 14 unmodeled columns (License_Status,
+    # Lifecycle_State, Next_Processing_Date, PEGI, PEGI_Description,
+    # Provider_Designation, Provider_Designation_Desc, Provider_Suffix,
+    # DEA_License, Illinois_License, TimeZone, Created, Updated, Lex_ID)
+    # remain out of scope.
+    "Academic_Program",
+    "School",
 )
 
 
@@ -280,6 +291,10 @@ def build_my_rush_jobs_row(
         "Working_Remotely": None,
         "Manager_Hold": None,
         "Legal_Hold": None,
+        # Only Ellucian currently overrides these (see source_templates.py) —
+        # every other source leaves them None.
+        "Academic_Program": None,
+        "School": None,
     }
     row = {**scaffold, **structural_fields(source_key)}
     if lifecycle == "processing":

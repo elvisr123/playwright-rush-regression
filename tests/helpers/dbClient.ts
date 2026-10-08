@@ -158,3 +158,41 @@ export async function findRowsByName(
     await pool.close().catch(() => {});
   }
 }
+
+/**
+ * Fetches every row from a STG_* staging table matching a User_ID, normalized
+ * to string values. User_ID is only the last 6 digits of the generated
+ * number (identity-factory/user_payload.py: `user_id = number[-6:]`), which
+ * cycles through all 1,000,000 possible values roughly every 11.6 days — so
+ * unlike Stage_Key (12 digits) or Correlation_Key (150-char hash), it is NOT
+ * unique across this project's whole history, only within one generation
+ * run. Confirmed live (2026-10-06): a new ECHO identity's User_ID collided
+ * with an unrelated identity created weeks earlier, and SailPoint correlated
+ * the new account onto that old identity (evidently via AccountName/User_ID
+ * matching, not just Correlation_Key) — this check closes that gap.
+ */
+export async function findRowsByUserId(table: string, userId: string): Promise<Record<string, string>[]> {
+  if (!KNOWN_TABLES.has(table)) {
+    throw new Error(`Refusing to query unrecognized table "${table}" — add it to KNOWN_TABLES in dbClient.ts once confirmed in SSMS.`);
+  }
+
+  const pool = new sql.ConnectionPool(config());
+  try {
+    await withTimeout(pool.connect(), HARD_TIMEOUT_MS, `Connecting to ${table}`);
+    const result = await withTimeout(
+      pool.request().input('userId', sql.VarChar, userId).query(`SELECT * FROM dbo.${table} WHERE User_ID = @userId`),
+      HARD_TIMEOUT_MS,
+      `Querying ${table} by User_ID`
+    );
+
+    return result.recordset.map((row) => {
+      const normalized: Record<string, string> = {};
+      for (const [key, value] of Object.entries(row)) {
+        normalized[key] = formatDbValue(value);
+      }
+      return normalized;
+    });
+  } finally {
+    await pool.close().catch(() => {});
+  }
+}

@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { runGenerator } from '../helpers/generatorClient';
-import { getStagingRow, findRowsByName } from '../helpers/dbClient';
+import { getStagingRow, findRowsByName, findRowsByUserId } from '../helpers/dbClient';
 import { isSailPointConfigured, aggregateSourceByName } from '../helpers/sailpointClient';
 import { evaluateCheck } from '../helpers/expectedValueCheck';
 import { buildIdentityCreationReport, CreationAttributeRow } from '../helpers/buildReport';
@@ -167,6 +167,24 @@ test('Create identity — INSERT + verify via SSMS', async () => {
       throw new Error(
         `Stage_Key "${row.stageKey}" already exists in My_Rush_Jobs — this looks like a genuine collision the ` +
           `local Excel audit log missed. Re-run to allocate a fresh number.`
+      );
+    }
+  }
+  // User_ID is only the last 6 digits of the generated number, which cycles
+  // through all 1,000,000 possible values roughly every 11.6 days — unlike
+  // Stage_Key/Correlation_Key, it is NOT unique across this project's whole
+  // history. Confirmed live (2026-10-06): a new identity's User_ID collided
+  // with one created weeks earlier, and SailPoint correlated the new account
+  // onto that old, unrelated identity instead of creating a new one.
+  const dbUserId = generated.rows[0]?.row['User_ID'];
+  if (dbUserId) {
+    const userIdMatches = await findRowsByUserId('My_Rush_Jobs', dbUserId);
+    if (userIdMatches.length > 0) {
+      throw new Error(
+        `User_ID "${dbUserId}" already exists in My_Rush_Jobs (Stage_Key(s): ` +
+          `${userIdMatches.map((r) => r['Stage_Key']).join(', ')}) — User_ID is only the last 6 digits of the ` +
+          `generated number and cycles roughly every 11.6 days, so it can collide with an identity created weeks ` +
+          `or months ago even when Stage_Key/Correlation_Key are unique. Re-run to allocate a fresh number.`
       );
     }
   }

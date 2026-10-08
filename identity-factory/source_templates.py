@@ -165,6 +165,17 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         # 2026-10-01, same Word-doc-of-screenshots source as "echo" above).
         # Many fields are genuinely blank for this source in the real
         # sample, not a gap — kept as None rather than guessed.
+        #
+        # Department_Name/Department/Academic_Program/School confirmed
+        # 2026-10-08 against a live dump of every Ellucian Students row in
+        # My_Rush_Jobs (not just the one original sample): Academic_Program
+        # and School are NOT a source-wide constant in reality — they vary
+        # per student's degree program — but every real row sharing this
+        # Department_Name uses Department="CMHN" (the template previously had
+        # "CMHH", which only ever appears on one obvious leftover test row,
+        # Stage_Key "EL-119898...TESTCL000PDPL" / name "MiguelPD Little" —
+        # not a real student), paired with Academic_Program="BFNP.DNP" (the
+        # most frequent variant for this department) and School="CON".
         "Source_Name": "Ellucian Students",
         "Email_Required": None,
         "User_Type": None,
@@ -181,7 +192,12 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         "Location": None,
         "Location_Code": None,
         "Department_Name": "Comm Systems & Mental Hlth Nsg",
-        "Department": "CMHH",
+        "Department": "CMHN",
+        "Academic_Program": "BFNP.DNP",
+        "School": "CON",
+        # Per user request (2026-10-08): leave Username unset, same override
+        # pattern as Workday's Username/Work_Email/Provider_National_ID.
+        "Username": None,
         "Cost_Center": None,
         "Title": None,
         "Job_Code": None,
