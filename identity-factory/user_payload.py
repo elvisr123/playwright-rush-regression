@@ -144,6 +144,30 @@ def lifecycle_dates(lifecycle: str, start_date: str | None = None) -> dict:
         start, end, disabled, status = today - timedelta(days=1), today + timedelta(days=180), False, "Active"
     else:
         raise SystemExit(f"Unknown lifecycle: {lifecycle}")
+
+    # Guard confirmed necessary live (2026-10-12): a leftover start_date from
+    # an earlier run (e.g. one of the 2025 dates used for the "6 active
+    # users" task) silently carried over into a later futurehire run and
+    # produced an identity with Status="Disabled" but a Start_Date already
+    # in the past - SailPoint showed it as Active, not Future Hire, since no
+    # reasonable classification can treat an already-passed Start_Date as a
+    # future hire. Only lifecycles whose own natural start is in the future
+    # (today only: futurehire/prehire) are guarded - no lifecycle-name
+    # special-casing needed, this falls out of comparing `start` to `today`
+    # directly. This is a different, resolved footgun from the still-open
+    # 2026-09-16 AGENTS.md entry (prehire showing as Active with NO
+    # start_date override involved at all - a live SailPoint Identity
+    # Profile classification question, untouched by this guard).
+    if start_date and start > today:
+        override = date.fromisoformat(start_date)
+        if override <= today:
+            raise SystemExit(
+                f'--start-date "{start_date}" is in the past, but lifecycle "{lifecycle}" represents someone '
+                f"who hasn't started yet (its own computed default Start_Date would be {start.isoformat()}, "
+                "in the future). A past Start_Date here would misclassify live - reset start_date/START_DATE "
+                "to None/undefined for this lifecycle, or pass a future date instead."
+            )
+
     start_iso = start_date if start_date else start.isoformat()
     return {
         "Start_Date": start_iso,
