@@ -82,7 +82,7 @@ const START_DATE: string | undefined = undefined; // 'YYYY-MM-DD'
 // Override Primary_Position ('YES'/'NO') instead of every source's template
 // default ('YES') — e.g. for a non-primary test user. Takes precedence even
 // over LIFECYCLE='processing's own 'NO' default.
-const PRIMARY_POSITION: 'YES' | 'NO' | undefined = undefined;
+const PRIMARY_POSITION: 'YES' | 'NO' | undefined = 'YES';
 // Opt-in: automatically trigger + wait for SailPoint source aggregation via
 // the API after every row is INSERTed and DB-verified below, instead of
 // aggregating manually in the sandbox UI (tests/helpers/sailpointClient.ts).
