@@ -35,7 +35,7 @@ import { LifecycleState } from '../config/lifecycles';
 // scripts/ssms-capture.ps1 — this never launches or logs into SSMS itself).
 //
 // Hand-edit these, same convention as every other spec in this repo:
-const SOURCES_TO_CREATE = ['workday']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
+const SOURCES_TO_CREATE = ['workday', 'rush']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
 const LIFECYCLE: LifecycleState = 'active';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
@@ -82,7 +82,7 @@ const START_DATE: string | undefined = undefined; // 'YYYY-MM-DD'
 // Override Primary_Position ('YES'/'NO') instead of every source's template
 // default ('YES') — e.g. for a non-primary test user. Takes precedence even
 // over LIFECYCLE='processing's own 'NO' default.
-const PRIMARY_POSITION: 'YES' | 'NO' | undefined = 'NO';
+const PRIMARY_POSITION: 'YES' | 'NO' | undefined = undefined;
 // Opt-in: automatically trigger + wait for SailPoint source aggregation via
 // the API after every row is INSERTed and DB-verified below, instead of
 // aggregating manually in the sandbox UI (tests/helpers/sailpointClient.ts).
