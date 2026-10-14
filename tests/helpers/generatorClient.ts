@@ -49,6 +49,12 @@ export interface GenerateOptions {
    * End_Date/Status/IIQDisabled still come from `lifecycle` as usual.
    */
   startDate?: string;
+  /**
+   * Override Primary_Position ("YES"/"NO") instead of every source's
+   * template default ("YES") — e.g. for a non-primary test user. Takes
+   * precedence even over lifecycle "processing"'s own "NO" default.
+   */
+  primaryPosition?: 'YES' | 'NO';
 }
 
 /**
@@ -99,6 +105,7 @@ export function runGenerator(
   if (opts.birthDate) args.push('--birth-date', opts.birthDate);
   if (opts.correlationKey) args.push('--correlation-key', opts.correlationKey);
   if (opts.startDate) args.push('--start-date', opts.startDate);
+  if (opts.primaryPosition) args.push('--primary-position', opts.primaryPosition);
 
   const [pythonCmd, ...pythonPrefixArgs] = resolvePython();
   const stdout = execFileSync(pythonCmd, [...pythonPrefixArgs, ...args], { encoding: 'utf8', timeout: 60_000 });

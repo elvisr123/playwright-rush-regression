@@ -264,6 +264,7 @@ def build_my_rush_jobs_row(
     birth_date: str | None = None,
     correlation_key: str | None = None,
     start_date: str | None = None,
+    primary_position: str | None = None,
 ) -> dict:
     """One fully populated My_Rush_Jobs row: identity scaffold (this
     function — name/date/generated-ID fields, the same for every source)
@@ -275,6 +276,14 @@ def build_my_rush_jobs_row(
     Original_Start_Date only — see lifecycle_dates(). Same
     generate-once-share-across-sources rule as birth_date applies if used
     with a multi-source identity.
+
+    primary_position ("YES"/"NO"), if given, overrides every source's
+    template default ("YES") and takes precedence even over the
+    lifecycle="processing" auto-override below — added 2026-10-14 per user
+    request (generating a non-primary active Workday test user; the
+    existing "processing" special-case was the only way to get
+    Primary_Position="NO" before this, and that also changes Status/
+    IIQDisabled/End_Date, not a clean "active, just non-primary" combo).
 
     birth_date must be generated ONCE per identity and passed in explicitly
     by multi-source callers (generate_identity.py) — calling this per source
@@ -340,6 +349,10 @@ def build_my_rush_jobs_row(
         # identities are always "NO" regardless of source - applied after
         # the structural merge so it takes precedence over the template.
         row["Primary_Position"] = "NO"
+    if primary_position is not None:
+        # Explicit override always wins, including over the "processing"
+        # default just above.
+        row["Primary_Position"] = primary_position
     missing = [c for c in MY_RUSH_JOBS_COLUMNS if c not in row]
     if missing:
         raise AssertionError(f"Source \"{source_key}\" template is missing columns: {missing}")

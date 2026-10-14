@@ -36,7 +36,7 @@ import { LifecycleState } from '../config/lifecycles';
 //
 // Hand-edit these, same convention as every other spec in this repo:
 const SOURCES_TO_CREATE = ['echo']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
-const LIFECYCLE: LifecycleState = 'active';
+const LIFECYCLE: LifecycleState = 'futurehire';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
 // To add another source to an identity that already exists (e.g. someone
@@ -76,7 +76,13 @@ const CORRELATION_KEY: string | undefined = undefined;
 // computed default (e.g. 'active' normally uses yesterday) — e.g. set to a
 // 2025 date for a currently-active identity with a real historical start.
 // End_Date/Status/IIQDisabled still come from LIFECYCLE as usual.
+// For futurehire/prehire, leave undefined to use the computed future date;
+// the generator rejects an override that is today or in the past.
 const START_DATE: string | undefined = undefined; // 'YYYY-MM-DD'
+// Override Primary_Position ('YES'/'NO') instead of every source's template
+// default ('YES') — e.g. for a non-primary test user. Takes precedence even
+// over LIFECYCLE='processing's own 'NO' default.
+const PRIMARY_POSITION: 'YES' | 'NO' | undefined = undefined;
 // Opt-in: automatically trigger + wait for SailPoint source aggregation via
 // the API after every row is INSERTed and DB-verified below, instead of
 // aggregating manually in the sandbox UI (tests/helpers/sailpointClient.ts).
@@ -146,8 +152,16 @@ test('Create identity — INSERT + verify via SSMS', async () => {
     birthDate: BIRTH_DATE,
     correlationKey: CORRELATION_KEY,
     startDate: START_DATE,
+    primaryPosition: PRIMARY_POSITION,
   });
   console.log(`Generated: ${generated.firstName} ${generated.lastName} (${generated.rows.length} row(s))`);
+  for (const { sourceName, stageKey, row } of generated.rows) {
+    console.log(
+      `  ${sourceName} (${stageKey}): requested lifecycle=${generated.lifecycle}, ` +
+        `Start_Date=${row['Start_Date']}, End_Date=${row['End_Date']}, ` +
+        `Status=${row['Status']}, IIQDisabled=${row['IIQDisabled']}`
+    );
+  }
 
   // Belt-and-suspenders duplicate check against the LIVE database, run
   // before any SSMS interaction. generate_identity.py's own collision

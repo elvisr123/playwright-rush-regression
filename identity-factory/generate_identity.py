@@ -148,6 +148,15 @@ def main() -> None:
             "a real historical start."
         ),
     )
+    parser.add_argument(
+        "--primary-position", default=None, dest="primary_position", choices=["YES", "NO"],
+        help=(
+            "Override Primary_Position instead of every source's template "
+            "default ('YES') — e.g. for a non-primary test user. Takes "
+            "precedence even over --lifecycle processing's own 'NO' "
+            "default."
+        ),
+    )
     args = parser.parse_args()
 
     if args.number and not (args.first and args.last):
@@ -179,7 +188,8 @@ def main() -> None:
         cfg = SOURCES[source_key]
         key = stage_key(cfg["prefix"], number)
         row = build_my_rush_jobs_row(
-            source_key, key, number, first, last, args.lifecycle, birth_date, args.correlation_key, args.start_date
+            source_key, key, number, first, last, args.lifecycle, birth_date, args.correlation_key, args.start_date,
+            args.primary_position,
         )
         save_row(row)
         append_identity(args.lifecycle, row)
