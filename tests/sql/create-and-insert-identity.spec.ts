@@ -35,7 +35,7 @@ import { LifecycleState } from '../config/lifecycles';
 // scripts/ssms-capture.ps1 — this never launches or logs into SSMS itself).
 //
 // Hand-edit these, same convention as every other spec in this repo:
-const SOURCES_TO_CREATE = ['workday', 'rush']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
+const SOURCES_TO_CREATE = ['nerm']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
 const LIFECYCLE: LifecycleState = 'active';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
