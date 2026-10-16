@@ -78,7 +78,7 @@ const CORRELATION_KEY: string | undefined = undefined;
 // End_Date/Status/IIQDisabled still come from LIFECYCLE as usual.
 // For futurehire/prehire, leave undefined to use the computed future date;
 // the generator rejects an override that is today or in the past.
-const START_DATE: string | undefined = '2026-10-17'; // 'YYYY-MM-DD'
+const START_DATE: string | undefined = '2026-10-10'; // 'YYYY-MM-DD'
 // Override Primary_Position ('YES'/'NO') instead of every source's template
 // default ('YES') — e.g. for a non-primary test user. Takes precedence even
 // over LIFECYCLE='processing's own 'NO' default.
