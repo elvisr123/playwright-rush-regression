@@ -43,14 +43,14 @@ import { LifecycleState } from '../config/lifecycles';
 // Swap the SOURCES_TO_CREATE line between runs and re-run; nothing else
 // changes:
 //   run 1 of 3 — RUSH Lawson active ........ ['rush']            DONE 2026-10-26
-//   run 2 of 3 — Copley Lawson active ...... ['copley']          <-- set below
-//   run 3 of 3 — both, one identity ........ ['copley', 'rush']
+//   run 2 of 3 — Copley Lawson active ...... ['copley']          DONE 2026-10-26
+//   run 3 of 3 — both, one identity ........ ['copley', 'rush']  <-- set below
 // Run 3 is a single multi-source identity (one name/DOB/Correlation_Key,
 // one row per source), not two identities — see the Correlation_Key note
 // further down. Its two rows will carry DIFFERENT User_IDs (0002xx Copley,
 // 0001xx RUSH) by design, per the per-source employee-ID prefix added
 // 2026-10-23 — see identity-factory/user_payload.py's source_user_id().
-const SOURCES_TO_CREATE = ['copley']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
+const SOURCES_TO_CREATE = ['copley', 'rush']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
 const LIFECYCLE: LifecycleState = 'active';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
