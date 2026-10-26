@@ -44,7 +44,12 @@ import { LifecycleState } from '../config/lifecycles';
 // changes:
 //   run 1 of 3 — RUSH Lawson active ........ ['rush']            DONE 2026-10-26
 //   run 2 of 3 — Copley Lawson active ...... ['copley']          DONE 2026-10-26
-//   run 3 of 3 — both, one identity ........ ['copley', 'rush']  <-- set below
+//   run 3 of 3 — both, one identity ........ ['copley', 'rush']  DONE 2026-10-26
+// Series complete. Left on ['copley', 'rush'] because a SECOND
+// Copley+Rush identity was requested 2026-10-26 — with FIRST/LAST/
+// NUMBER undefined, re-running as-is generates a fresh name and
+// number, i.e. another independent multi-source identity rather than
+// a duplicate of run 3.                                      <-- set below
 // Run 3 is a single multi-source identity (one name/DOB/Correlation_Key,
 // one row per source), not two identities — see the Correlation_Key note
 // further down. Its two rows will carry DIFFERENT User_IDs (0002xx Copley,
