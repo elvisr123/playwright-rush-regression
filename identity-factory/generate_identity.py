@@ -23,6 +23,16 @@ WD-9001179069605612ER) plus their exact --first/--last, and --sources with
 only the NEW source(s) — this reuses that number instead of allocating a
 fresh one, so the new row's User_ID lines up with the existing account(s).
 
+Note (2026-10-23): User_ID (the 6-digit employee ID) is now prefixed per
+source — 0001 rush, 0002 copley, 003 nerm, 004 echo, 005 ellucian, 006
+workday — so the rows of one multi-source identity each carry a DIFFERENT
+User_ID, by design (see source_user_id() in user_payload.py). On the
+--number add-a-source path this means the new source's row does NOT reuse
+the existing account's User_ID: it gets its own source-prefixed one from the
+same number, and correlation to the existing identity rests entirely on
+Correlation_Key matching (see below). Identities created before this change
+share one User_ID across their sources; nothing migrates them.
+
 IMPORTANT — Correlation_Key must be byte-for-byte identical across every
 source's row for the same identity, confirmed against a real manually
 correlated identity (Non-Employee Workforce + Copley Lawson: identical
@@ -157,6 +167,15 @@ def main() -> None:
             "default."
         ),
     )
+    parser.add_argument(
+        "--oneup-manager-employee-id", default=None, dest="oneup_manager_employee_id",
+        help=(
+            "Override OneUp_Manager_Employee_ID instead of the source "
+            "template's own constant — e.g. point a RUSH Lawson identity's "
+            "one-up manager at an existing Copley Lawson test identity's "
+            "employee ID. OneUp_Manager_Network_ID is left untouched."
+        ),
+    )
     args = parser.parse_args()
 
     if args.number and not (args.first and args.last):
@@ -189,7 +208,7 @@ def main() -> None:
         key = stage_key(cfg["prefix"], number)
         row = build_my_rush_jobs_row(
             source_key, key, number, first, last, args.lifecycle, birth_date, args.correlation_key, args.start_date,
-            args.primary_position,
+            args.primary_position, args.oneup_manager_employee_id,
         )
         save_row(row)
         append_identity(args.lifecycle, row)

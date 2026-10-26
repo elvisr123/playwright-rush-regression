@@ -35,6 +35,21 @@ import { LifecycleState } from '../config/lifecycles';
 // scripts/ssms-capture.ps1 — this never launches or logs into SSMS itself).
 //
 // Hand-edit these, same convention as every other spec in this repo:
+//
+// Requested 2026-10-23: three separate active identities, one per run, in
+// this order. Each is a brand-new, independent identity (a fresh random
+// name and number every run) — NOT the same person gaining sources, so
+// NUMBER/BIRTH_DATE/CORRELATION_KEY below stay undefined for all three.
+// Swap the SOURCES_TO_CREATE line between runs and re-run; nothing else
+// changes:
+//   run 1 of 3 — RUSH Lawson active ........ ['rush']            <-- set below
+//   run 2 of 3 — Copley Lawson active ...... ['copley']
+//   run 3 of 3 — both, one identity ........ ['copley', 'rush']
+// Run 3 is a single multi-source identity (one name/DOB/Correlation_Key,
+// one row per source), not two identities — see the Correlation_Key note
+// further down. Its two rows will carry DIFFERENT User_IDs (0002xx Copley,
+// 0001xx RUSH) by design, per the per-source employee-ID prefix added
+// 2026-10-23 — see identity-factory/user_payload.py's source_user_id().
 const SOURCES_TO_CREATE = ['rush']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
 const LIFECYCLE: LifecycleState = 'active';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
@@ -78,11 +93,28 @@ const CORRELATION_KEY: string | undefined = undefined;
 // End_Date/Status/IIQDisabled still come from LIFECYCLE as usual.
 // For futurehire/prehire, leave undefined to use the computed future date;
 // the generator rejects an override that is today or in the past.
-const START_DATE: string | undefined = '2026-10-10'; // 'YYYY-MM-DD'
+const START_DATE: string | undefined = undefined; // 'YYYY-MM-DD'
 // Override Primary_Position ('YES'/'NO') instead of every source's template
 // default ('YES') — e.g. for a non-primary test user. Takes precedence even
 // over LIFECYCLE='processing's own 'NO' default.
 const PRIMARY_POSITION: 'YES' | 'NO' | undefined = undefined;
+// Override OneUp_Manager_Employee_ID instead of the source template's own
+// value. Every source's template value is now NULL (2026-10-23): the real
+// Rush employees the templates used to name as manager/one-up manager were
+// replaced with 'default.manager' + NULL manager IDs per the standing rule
+// that test identities must never point at real users — see
+// identity-factory/source_templates.py and AGENTS.md. So leaving this
+// undefined means "no one-up manager", not "the template's person".
+// Set it only to point the one-up manager at a specific TEST identity's
+// employee ID (that identity's own User_ID), never a real employee's. The
+// previous value here, '259921' (Copley test identity MaeveAA Yamamoto),
+// was for the 2026-10-22 single-source RUSH run and is reset below since
+// this run's requirement is test-user-only managers across both sources.
+// Note this override applies to EVERY source in SOURCES_TO_CREATE, not just
+// one of them — it is not per-source.
+// OneUp_Manager_Network_ID is not overridable here (separate attribute, now
+// NULL in every template).
+const ONEUP_MANAGER_EMPLOYEE_ID: string | undefined = undefined;
 // Opt-in: automatically trigger + wait for SailPoint source aggregation via
 // the API after every row is INSERTed and DB-verified below, instead of
 // aggregating manually in the sandbox UI (tests/helpers/sailpointClient.ts).
@@ -153,6 +185,7 @@ test('Create identity — INSERT + verify via SSMS', async () => {
     correlationKey: CORRELATION_KEY,
     startDate: START_DATE,
     primaryPosition: PRIMARY_POSITION,
+    oneUpManagerEmployeeId: ONEUP_MANAGER_EMPLOYEE_ID,
   });
   console.log(`Generated: ${generated.firstName} ${generated.lastName} (${generated.rows.length} row(s))`);
   for (const { sourceName, stageKey, row } of generated.rows) {
@@ -190,21 +223,31 @@ test('Create identity — INSERT + verify via SSMS', async () => {
       );
     }
   }
-  // User_ID is only the last 6 digits of the generated number, which cycles
-  // through all 1,000,000 possible values roughly every 11.6 days — unlike
-  // Stage_Key/Correlation_Key, it is NOT unique across this project's whole
-  // history. Confirmed live (2026-10-06): a new identity's User_ID collided
-  // with one created weeks earlier, and SailPoint correlated the new account
-  // onto that old, unrelated identity instead of creating a new one.
-  const dbUserId = generated.rows[0]?.row['User_ID'];
-  if (dbUserId) {
+  // User_ID is a 6-digit employee ID — a per-source prefix (0001 rush, 0002
+  // copley, 003 nerm, 004 echo, 005 ellucian, 006 workday) plus the trailing
+  // digits of the generated number — so unlike Stage_Key/Correlation_Key it
+  // is NOT unique across this project's whole history. Confirmed live
+  // (2026-10-06): a new identity's User_ID collided with one created weeks
+  // earlier, and SailPoint correlated the new account onto that old,
+  // unrelated identity instead of creating a new one.
+  //
+  // Checked per row, not once: since 2026-10-23 each source's row carries
+  // its own prefixed User_ID, so a multi-source identity has several
+  // distinct ones to clear (before that they were all identical and
+  // checking rows[0] was sufficient).
+  for (const { sourceName, stageKey, row } of generated.rows) {
+    const dbUserId = row['User_ID'];
+    if (!dbUserId) continue;
     const userIdMatches = await findRowsByUserId('My_Rush_Jobs', dbUserId);
     if (userIdMatches.length > 0) {
       throw new Error(
-        `User_ID "${dbUserId}" already exists in My_Rush_Jobs (Stage_Key(s): ` +
-          `${userIdMatches.map((r) => r['Stage_Key']).join(', ')}) — User_ID is only the last 6 digits of the ` +
-          `generated number and cycles roughly every 11.6 days, so it can collide with an identity created weeks ` +
-          `or months ago even when Stage_Key/Correlation_Key are unique. Re-run to allocate a fresh number.`
+        `User_ID "${dbUserId}" (${sourceName}, ${stageKey}) already exists in My_Rush_Jobs (Stage_Key(s): ` +
+          `${userIdMatches.map((r) => r['Stage_Key']).join(', ')}) — User_ID is a per-source prefix plus the ` +
+          `trailing digits of the generated number, so it can collide with an identity created weeks or months ` +
+          `ago even when Stage_Key/Correlation_Key are unique. Re-run to allocate a fresh number. Note the ` +
+          `prefix scheme leaves only 100 possible User_IDs for rush/copley and 1000 for the other sources, so ` +
+          `repeated collisions here mean that source's ID space is filling up, not bad luck — the prefix widths ` +
+          `in identity-factory/user_payload.py's SOURCES would need revisiting.`
       );
     }
   }

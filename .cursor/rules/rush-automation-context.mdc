@@ -1,9 +1,7 @@
 ---
 description: Context and conventions for the Rush SailPoint ISC regression screenshot/report automation
-globs: tests/**/*.ts
-alwaysApply: true
+alwaysApply: false
 ---
-
 # What this project does
 
 Playwright automation that logs into the Rush SailPoint ISC sandbox, searches for a

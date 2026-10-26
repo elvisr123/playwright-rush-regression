@@ -55,6 +55,18 @@ export interface GenerateOptions {
    * precedence even over lifecycle "processing"'s own "NO" default.
    */
   primaryPosition?: 'YES' | 'NO';
+  /**
+   * Override OneUp_Manager_Employee_ID instead of the source template's own
+   * value — e.g. point an identity's one-up manager at an existing TEST
+   * identity's employee ID (that identity's own User_ID). As of 2026-10-23
+   * every source template's value is NULL (real Rush managers were removed
+   * in favour of "default.manager" + NULL manager IDs), so leaving this
+   * unset means "no one-up manager" rather than a template person. Never
+   * set it to a real employee's ID. Applies to every source in one run, not
+   * per-source. OneUp_Manager_Network_ID is deliberately left untouched
+   * (separate attribute; the network ID isn't implied by the employee ID).
+   */
+  oneUpManagerEmployeeId?: string;
 }
 
 /**
@@ -106,6 +118,7 @@ export function runGenerator(
   if (opts.correlationKey) args.push('--correlation-key', opts.correlationKey);
   if (opts.startDate) args.push('--start-date', opts.startDate);
   if (opts.primaryPosition) args.push('--primary-position', opts.primaryPosition);
+  if (opts.oneUpManagerEmployeeId) args.push('--oneup-manager-employee-id', opts.oneUpManagerEmployeeId);
 
   const [pythonCmd, ...pythonPrefixArgs] = resolvePython();
   const stdout = execFileSync(pythonCmd, [...pythonPrefixArgs, ...args], { encoding: 'utf8', timeout: 60_000 });

@@ -26,20 +26,28 @@ INITIALS = "Rush"
 
 LIFECYCLES = ("futurehire", "prehire", "active", "termed", "inactive", "rehire", "processing")
 
+# "prefix" is the Stage_Key prefix (see stage_key()); "user_id_prefix" is the
+# literal leading digits of the 6-digit User_ID (the identity's employee ID,
+# see source_user_id()). Both are per-source key-generation literals, kept in
+# one registry rather than spread across modules — source_templates.py holds
+# only the workplace/structural attributes, not generated keys.
 SOURCES = {
-    "copley": {"name": "Copley Lawson", "prefix": "CL"},
-    "rush": {"name": "RUSH Lawson", "prefix": "RL"},
-    "echo": {"name": "ECHO Credentialed Providers", "prefix": "EC"},
-    "ellucian": {"name": "Ellucian Students", "prefix": "ES"},
-    "nerm": {"name": "Non-Employee Workforce", "prefix": "NE"},
+    "copley": {"name": "Copley Lawson", "prefix": "CL", "user_id_prefix": "0002"},
+    "rush": {"name": "RUSH Lawson", "prefix": "RL", "user_id_prefix": "0001"},
+    "echo": {"name": "ECHO Credentialed Providers", "prefix": "EC", "user_id_prefix": "004"},
+    "ellucian": {"name": "Ellucian Students", "prefix": "ES", "user_id_prefix": "005"},
+    "nerm": {"name": "Non-Employee Workforce", "prefix": "NE", "user_id_prefix": "003"},
     # "name" here is used for reporting and the SailPoint API aggregation
     # lookup (getSourceIdByName) — "RUSH Workday" per tests/config/sources.ts
     # (the canonical name confirmed there, 2026-10-01), NOT the same as the
     # My_Rush_Jobs.Source_Name column value in source_templates.py, which
     # stays "Rush Workday" (the literal value from a real 2026-09-15 INSERT
     # sample) — these two can legitimately differ.
-    "workday": {"name": "RUSH Workday", "prefix": "WD"},
+    "workday": {"name": "RUSH Workday", "prefix": "WD", "user_id_prefix": "006"},
 }
+
+# User_ID (the identity's employee ID) is always exactly this many digits.
+USER_ID_LENGTH = 6
 
 # Column order matches the VDI INSERT into [SOA].[dbo].[My_Rush_Jobs].
 MY_RUSH_JOBS_COLUMNS = (
@@ -223,8 +231,74 @@ def stage_key(prefix: str, number: str) -> str:
     return f"{prefix}-9001{number}ER"
 
 
-def default_correlation_key(user_id: str, number: str) -> str:
+def source_user_id(source_key: str, number: str) -> str:
+    """The identity's 6-digit employee ID for one source: that source's
+    literal User_ID prefix (SOURCES[...]["user_id_prefix"]) followed by
+    enough trailing digits of `number` to reach exactly 6.
+
+    Per user-stated convention (2026-10-23): "Employee id/user id should be
+    six digits" and "Employee ID should start with 0001 for rush, 0002 for
+    Copley, 003 for Non-Employee workforce, 004 for Echo Credentialed
+    Providers and 005 for Ellucian, 006 for Workday" - the prefixes are
+    deliberately NOT all the same width (4 digits for rush/copley, 3 for the
+    other four), which is how the user specified them; every case still
+    totals 6 digits, so the tail length falls out of USER_ID_LENGTH minus the
+    prefix length rather than being hardcoded per source.
+
+    Supersedes the previous `user_id = number[-6:]` (source-independent, so
+    every source's row for one identity shared one User_ID). Consequence,
+    accepted deliberately by the user: a multi-source identity now has a
+    DIFFERENT User_ID per source row - matching how a real person has their
+    own employee ID in each HR system - so correlating those rows into one
+    SailPoint identity rests solely on the shared Correlation_Key. That is
+    why default_correlation_key() below is seeded from `number` only and
+    never from this value (see its docstring).
+
+    Note the collision budget shrank sharply: rush/copley have only 100
+    possible User_IDs each (2 free digits) and the other four 1000 each,
+    versus 1,000,000 before. create-and-insert-identity.spec.ts's pre-flight
+    findRowsByUserId() check against the live My_Rush_Jobs is now the thing
+    standing between a generated row and the 2026-10-06 mis-correlation bug
+    (see AGENTS.md); expect it to reject re-runs once a source's space fills
+    up, rather than it being the rare event it was before.
+    """
+    # Explicit lookup rather than SOURCES[source_key]: this function now runs
+    # BEFORE the structural merge in build_my_rush_jobs_row, so a bad source
+    # key used to surface as source_templates.structural_fields()'s clear
+    # NotImplementedError and would otherwise now surface as a bare KeyError
+    # from here instead. (The CLI can't reach this - argparse restricts
+    # --sources to SOURCES' own keys - but build_workflow_input/
+    # build_copley_attributes take a source key straight from their caller.)
+    config = SOURCES.get(source_key)
+    if config is None:
+        raise NotImplementedError(
+            f'No source config for "{source_key}". Known sources: '
+            f"{', '.join(sorted(SOURCES))}. Add it to SOURCES (name/prefix/user_id_prefix) "
+            "and to source_templates.SOURCE_TEMPLATES before generating it."
+        )
+    prefix = config["user_id_prefix"]
+    tail_length = USER_ID_LENGTH - len(prefix)
+    if tail_length < 1:
+        raise AssertionError(
+            f'User_ID prefix "{prefix}" for source "{source_key}" leaves no room for a tail '
+            f"within {USER_ID_LENGTH} digits."
+        )
+    return f"{prefix}{number[-tail_length:]}"
+
+
+def default_correlation_key(base_user_id: str, number: str) -> str:
     """Long, hash-like Correlation_Key in the style of real Rush test data.
+
+    base_user_id must be the SOURCE-INDEPENDENT `number[-6:]`, never
+    source_user_id()'s per-source employee ID - the whole point of this value
+    is that it comes out byte-for-byte identical for every source's row of
+    one identity, which is what SailPoint correlates them on. Seeding it from
+    a per-source User_ID would give the Copley and RUSH rows of one person
+    different Correlation_Keys and stop them correlating at all. Keeping the
+    seed on `number[-6:]` also means this function returns exactly the same
+    value it did before User_ID became source-specific (2026-10-23), so the
+    --correlation-key add-a-source path for identities created earlier is
+    unaffected.
     Per user request (2026-09-21): match the shape of a real example
     (Pooja Vijay's manually-created identity, Correlation_Key
     "9512441111141186CE9CA6FEE37F97534D35DA9435AD2943995227D9D1AB3BB393A35
@@ -248,7 +322,7 @@ def default_correlation_key(user_id: str, number: str) -> str:
     new literal segment, keeping the two consistent per user decision - same
     rationale as the original "9512" choice, just following stage_key()'s
     prefix change."""
-    seed = f"{user_id}{number}"
+    seed = f"{base_user_id}{number}"
     primary = hashlib.sha512(seed.encode()).hexdigest().upper()
     extra = hashlib.sha256((seed + "EXT").encode()).hexdigest().upper()[:18]
     return f"9001{primary}{extra}"
@@ -265,6 +339,7 @@ def build_my_rush_jobs_row(
     correlation_key: str | None = None,
     start_date: str | None = None,
     primary_position: str | None = None,
+    oneup_manager_employee_id: str | None = None,
 ) -> dict:
     """One fully populated My_Rush_Jobs row: identity scaffold (this
     function — name/date/generated-ID fields, the same for every source)
@@ -285,6 +360,16 @@ def build_my_rush_jobs_row(
     Primary_Position="NO" before this, and that also changes Status/
     IIQDisabled/End_Date, not a clean "active, just non-primary" combo).
 
+    oneup_manager_employee_id, if given, overrides the source template's
+    OneUp_Manager_Employee_ID — added 2026-10-22 per user request (a RUSH
+    Lawson identity whose one-up manager should be an existing Copley
+    Lawson test identity's employee ID rather than RUSH's own template
+    constant "181609"). OneUp_Manager_Network_ID is deliberately NOT
+    touched: the two are separate attributes in My_Rush_Jobs and the
+    network ID of that other identity isn't implied by its employee ID
+    (Copley's own template, for instance, carries the same digits in both
+    while RUSH's carries a username in the network ID).
+
     birth_date must be generated ONCE per identity and passed in explicitly
     by multi-source callers (generate_identity.py) — calling this per source
     with birth_date=None would give each source's row a different random
@@ -298,20 +383,37 @@ def build_my_rush_jobs_row(
     value already shared across sources by the caller) is correlation-safe
     on its own; pass correlation_key explicitly only to match an *existing*
     identity's already-stored value verbatim (e.g. adding a source to an
-    identity created before this default existed)."""
+    identity created before this default existed).
+
+    User_ID, by contrast, is intentionally the one generated field that does
+    NOT match across an identity's sources since 2026-10-23 - it carries a
+    per-source prefix (see source_user_id()). Identities created before that
+    change have one shared User_ID across their sources; there is no
+    migration."""
     given = f"{first}{INITIALS}"
     display = f"{given} {last}"
     dates = lifecycle_dates(lifecycle, start_date)
-    user_id = number[-6:]
+    # Two distinct 6-digit values since 2026-10-23, deliberately:
+    #   user_id      - this source's employee ID, prefixed per source
+    #                  (source_user_id()), so it DIFFERS across the rows of
+    #                  one multi-source identity.
+    #   base_user_id - the old source-independent number[-6:], kept only as
+    #                  the seed for values that must stay identical across
+    #                  every source of one identity: Correlation_Key (what
+    #                  SailPoint correlates on) and Provider_National_ID (a
+    #                  person-level national provider ID in real life, not a
+    #                  per-system identifier like the employee ID).
+    user_id = source_user_id(source_key, number)
+    base_user_id = number[-6:]
     email = f"{given}{last}@gmail.com"
     scaffold = {
         "Stage_Key": key,
-        "Correlation_Key": correlation_key or default_correlation_key(user_id, number),
+        "Correlation_Key": correlation_key or default_correlation_key(base_user_id, number),
         "Username": display,
         "Work_Email": email,
         "User_ID": user_id,
         "Initials": INITIALS[0],
-        "Provider_National_ID": f"12{user_id[-4:]}",
+        "Provider_National_ID": f"12{base_user_id[-4:]}",
         "Legacy_User": None,
         "Email_Required": None,
         "Given_Name": given,
@@ -353,6 +455,10 @@ def build_my_rush_jobs_row(
         # Explicit override always wins, including over the "processing"
         # default just above.
         row["Primary_Position"] = primary_position
+    if oneup_manager_employee_id is not None:
+        # Applied after the structural merge so it takes precedence over the
+        # source template's own constant — see the docstring above.
+        row["OneUp_Manager_Employee_ID"] = oneup_manager_employee_id
     missing = [c for c in MY_RUSH_JOBS_COLUMNS if c not in row]
     if missing:
         raise AssertionError(f"Source \"{source_key}\" template is missing columns: {missing}")

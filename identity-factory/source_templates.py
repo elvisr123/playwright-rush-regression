@@ -8,6 +8,16 @@ by user_payload.build_my_rush_jobs_row's scaffold.
 All 6 sources ("copley", "rush", "echo", "ellucian", "nerm", "workday") are
 populated as of 2026-10-01.
 
+RULE for every template here (standing user rule, applied 2026-10-23): the
+manager and one-up manager must never be real Rush people. Every source now
+carries Manager_Name="default.manager" with Manager_Username/
+Manager_Employee_ID/OneUp_Manager_Employee_ID/OneUp_Manager_Network_ID NULL -
+so when you populate a new source from a real reference row below, strip its
+manager fields the same way instead of copying them across. Point the one-up
+manager at a specific test identity only via
+create-and-insert-identity.spec.ts's ONEUP_MANAGER_EMPLOYEE_ID (a test
+identity's own User_ID), never a real employee's.
+
 To add a source: pull a real, known-good reference row for it — e.g. via
 tests/helpers/dbClient.ts's getStagingRow() against a Stage_Key already used
 in tests/sources/<source>/*.spec.ts (or a fresh SELECT in SSMS for a source
@@ -42,13 +52,25 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         "Title": "REGISTERED NURSE",
         "Job_Code": "369",
         "Job_Family": "REGISTNURS",
-        "Manager_Name": "REES, SHERRY A.",
+        # Manager/one-up manager de-realified 2026-10-23 per user rule
+        # ("Change Manager and Oneupmanager - Do not use real time users,
+        # only use test users"): this template's values were copied from a
+        # real reference row and named actual Rush employees, which a
+        # synthetic test identity must not point at. Replaced with the same
+        # shape ECHO/Ellucian already used - "default.manager" plus NULL
+        # manager/one-up IDs - rather than another named person, per the
+        # user's choice of the default.manager option. Real values kept
+        # here only as a comment, for traceability back to the sample:
+        #   Manager_Name "REES, SHERRY A.", Manager_Username/
+        #   Manager_Employee_ID "99314", OneUp_Manager_Employee_ID/
+        #   OneUp_Manager_Network_ID "107641".
+        "Manager_Name": "default.manager",
         "Primary_Position": "YES",
         "Relationship_Status": "ACTIVE REGULAR",
-        "Manager_Username": "99314",
-        "Manager_Employee_ID": "99314",
-        "OneUp_Manager_Employee_ID": "107641",
-        "OneUp_Manager_Network_ID": "107641",
+        "Manager_Username": None,
+        "Manager_Employee_ID": None,
+        "OneUp_Manager_Employee_ID": None,
+        "OneUp_Manager_Network_ID": None,
         "Work_Phone_Number": "1678777754",
         "Work_Hours": "8hours",
     },
@@ -90,16 +112,28 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         "Title": "Patient Care Tech",
         "Job_Code": "34",
         "Job_Family": "LICCERTECH",
-        "Manager_Name": "Phalen, Lisa",
+        # Manager/one-up manager de-realified 2026-10-23 per user rule
+        # ("Change Manager and Oneupmanager - Do not use real time users,
+        # only use test users"): this template's values were copied from a
+        # real reference row and named actual Rush employees, which a
+        # synthetic test identity must not point at. Replaced with the same
+        # shape ECHO/Ellucian already used - "default.manager" plus NULL
+        # manager/one-up IDs - rather than another named person, per the
+        # user's choice of the default.manager option. Real values kept
+        # here only as a comment, for traceability back to the sample:
+        #   Manager_Name "Phalen, Lisa", Manager_Username "LPHALEN",
+        #   Manager_Employee_ID "042558", OneUp_Manager_Employee_ID
+        #   "181609", OneUp_Manager_Network_ID "KPIERRE".
+        "Manager_Name": "default.manager",
         "Primary_Position": "YES",
         # Per user decision (2026-09-22): "ACTIVE REGULAR" for active
         # identities, not the real sample's "Inactive" (see note above).
         "Relationship_Status": "ACTIVE REGULAR",
         "Salary_Structure": "PCT-PCT ADV",
-        "Manager_Username": "LPHALEN",
-        "Manager_Employee_ID": "042558",
-        "OneUp_Manager_Employee_ID": "181609",
-        "OneUp_Manager_Network_ID": "KPIERRE",
+        "Manager_Username": None,
+        "Manager_Employee_ID": None,
+        "OneUp_Manager_Employee_ID": None,
+        "OneUp_Manager_Network_ID": None,
         "Work_Phone_Number": None,
         "Work_Hours": "12",
         "Do_Not_Rehire": "false",
@@ -261,7 +295,12 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         # "valid manager populated from source data" (not a default) —
         # matches this real sample having an actual named manager rather
         # than default.manager, unlike ECHO/Ellucian above.
-        "Manager_Name": "acopela3",
+        # Manager de-realified 2026-10-23 per the same user rule as
+        # copley/rush/workday above - the design doc's "valid manager
+        # populated from source data" for this source resolved to a real
+        # Rush username ("acopela3") in the reference sample. The one-up
+        # manager fields were already NULL here.
+        "Manager_Name": "default.manager",
         "Primary_Position": "YES",
         "Relationship_Status": None,
         "Salary_Structure": None,
@@ -311,16 +350,28 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         "Title": "Clinical Data Abstractor Per Diem RUMC",
         "Job_Code": "03524",
         "Job_Family": "Risk Management",
-        "Manager_Name": "IsmaelPD p Fisher",
+        # Manager/one-up manager de-realified 2026-10-23 per user rule
+        # ("Change Manager and Oneupmanager - Do not use real time users,
+        # only use test users"): this template's values were copied from a
+        # real reference row and named actual Rush employees, which a
+        # synthetic test identity must not point at. Replaced with the same
+        # shape ECHO/Ellucian already used - "default.manager" plus NULL
+        # manager/one-up IDs - rather than another named person, per the
+        # user's choice of the default.manager option. Real values kept
+        # here only as a comment, for traceability back to the sample:
+        #   Manager_Name "IsmaelPD p Fisher", Manager_Username "tsep",
+        #   Manager_Employee_ID "19087701", OneUp_Manager_Employee_ID
+        #   "20100001", OneUp_Manager_Network_ID "ntruckenbro2".
+        "Manager_Name": "default.manager",
         "Primary_Position": "YES",
         # Sample value was the literal string "true", unlike Copley's
         # descriptive "ACTIVE REGULAR" — kept as-is per the real sample
         # rather than guessing a descriptive equivalent.
         "Relationship_Status": "true",
-        "Manager_Username": "tsep",
-        "Manager_Employee_ID": "19087701",
-        "OneUp_Manager_Employee_ID": "20100001",
-        "OneUp_Manager_Network_ID": "ntruckenbro2",
+        "Manager_Username": None,
+        "Manager_Employee_ID": None,
+        "OneUp_Manager_Employee_ID": None,
+        "OneUp_Manager_Network_ID": None,
         "Work_Phone_Number": "1700005543",
         "Work_Hours": "Variable_time",
         # Per user decision (2026-09-18): the 2026-09-15 sample's NULL here
