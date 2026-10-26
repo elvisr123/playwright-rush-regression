@@ -125,7 +125,10 @@ const ONEUP_MANAGER_EMPLOYEE_ID: string | undefined = undefined;
 // default: the aggregation-trigger endpoint itself hasn't been verified
 // against live SailPoint API docs yet (see sailpointClient.ts's header
 // comment) — turn this on deliberately once you've confirmed it works.
-const TRIGGER_AGGREGATION = true;
+// Off per standing instruction (2026-10-26): aggregate manually in the
+// sandbox UI instead. Applies to the whole run-1/2/3 series, so leave
+// this false when flipping SOURCES_TO_CREATE between runs.
+const TRIGGER_AGGREGATION = false;
 // Dedicated SharePoint folder for identity-creation evidence, already
 // created by a teammate — a SIBLING of testplaywright_testcases under
 // Rush_TestCases, not a child of it, so this is its own direct sharing URL
