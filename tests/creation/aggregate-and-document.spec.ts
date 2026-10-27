@@ -33,11 +33,23 @@ const LABEL = 'PASTE_LABEL_HERE';
 // around, point this at that folder instead. Leave as 'temp' otherwise.
 const HANDOFF_DIR = 'temp';
 
-// New, dedicated SharePoint folder for combined creation+documentation
-// reports — separate from both the main documentation pipeline's per-source
-// folders and the creation-only VDI_Automation_Evidence folder.
+// Dedicated SharePoint folder for combined creation+documentation reports —
+// separate from both the main documentation pipeline's per-source folders
+// and the creation-only VDI_Automation_Evidence folder.
+//
+// Pointed at Evidence_Nov/Lifecycle_Transition_Time on 2026-10-27 per user
+// request, for the futurehire/prehire lifecycle-transition test users. The
+// previous target was .../Rush_TestCases/VDI_playwright_combined_doc —
+// restore that line if a later run belongs back in the general folder.
+//
+// Only the `id` query param matters: sharepointUpload.ts reads it via
+// searchParams.get('id') and decodes it to the destination path
+// (/sites/AsbRushISC/Shared Documents/ASB/Rush_TestCases/
+// Enhancement_Nov_2026/Evidence_Nov/Lifecycle_Transition_Time). The
+// newTargetListUrl/viewpath params SharePoint adds to a copied address-bar
+// URL are ignored, so they're left off here.
 const COMBINED_REPORT_FOLDER_URL =
-  'https://netorgft1314491.sharepoint.com/sites/AsbRushISC/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FAsbRushISC%2FShared%20Documents%2FASB%2FRush%5FTestCases%2FVDI%5Fplaywright%5Fcombined%5Fdoc&viewid=bf9387e7%2D2afb%2D4447%2D9521%2Dd0be1432113c';
+  'https://netorgft1314491.sharepoint.com/sites/AsbRushISC/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FAsbRushISC%2FShared%20Documents%2FASB%2FRush%5FTestCases%2FEnhancement%5FNov%5F2026%2FEvidence%5FNov%2FLifecycle%5FTransition%5FTime&viewid=bf9387e7%2D2afb%2D4447%2D9521%2Dd0be1432113c';
 
 interface PendingAggregationRow {
   sourceKey: string;
