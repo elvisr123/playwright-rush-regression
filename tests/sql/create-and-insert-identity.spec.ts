@@ -51,9 +51,9 @@ import { LifecycleState } from '../config/lifecycles';
 //     run  2 ['copley']      DONE 2026-10-27
 //     run  3 ['echo']        DONE 2026-10-27
 //     run  4 ['nerm']        DONE 2026-10-27
-//     run  5 ['ellucian']    <-- set below  (last of USER 1)
+//     run  5 ['ellucian']    DONE 2026-10-27  (USER 1 complete)
 //   USER 2 — prehire, Start_Date 2026-10-29, End_Date blank
-//     run  6 ['rush']
+//     run  6 ['rush']        <-- set below
 //     run  7 ['copley']
 //     run  8 ['echo']
 //     run  9 ['nerm']
@@ -76,8 +76,8 @@ import { LifecycleState } from '../config/lifecycles';
 // are — but they are ABSOLUTE, so if this series slips past 2026-10-29 the
 // user-2 date stops being valid and the whole premise needs rethinking,
 // not just a date bump.
-const SOURCES_TO_CREATE = ['ellucian']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
-const LIFECYCLE: LifecycleState = 'futurehire';
+const SOURCES_TO_CREATE = ['rush']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
+const LIFECYCLE: LifecycleState = 'prehire';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
 // To add another source to an identity that already exists (e.g. someone
@@ -119,7 +119,7 @@ const CORRELATION_KEY: string | undefined = undefined;
 // End_Date/Status/IIQDisabled still come from LIFECYCLE as usual.
 // For futurehire/prehire, leave undefined to use the computed future date;
 // the generator rejects an override that is today or in the past.
-const START_DATE: string | undefined = '2026-11-25'; // 'YYYY-MM-DD'
+const START_DATE: string | undefined = '2026-10-29'; // 'YYYY-MM-DD'
 // Override End_Date instead of the lifecycle's computed value (today +
 // 180 days). Set to 'BLANK' to leave it genuinely empty (stored as SQL
 // NULL) — what a futurehire/prehire test user with no scheduled end
