@@ -56,8 +56,8 @@ import { LifecycleState } from '../config/lifecycles';
 //     run  6 ['rush']        DONE 2026-10-27
 //     run  7 ['copley']      DONE 2026-10-27
 //     run  8 ['echo']        DONE 2026-10-27
-//     run  9 ['nerm']        <-- set below
-//     run 10 ['ellucian']
+//     run  9 ['nerm']        DONE 2026-10-27
+//     run 10 ['ellucian']    <-- set below  (LAST of the series)
 //
 // Runs 1-5 need LIFECYCLE='futurehire' + START_DATE='2026-11-25'.
 // Runs 6-10 need LIFECYCLE='prehire'   + START_DATE='2026-10-29'.
@@ -76,7 +76,7 @@ import { LifecycleState } from '../config/lifecycles';
 // are — but they are ABSOLUTE, so if this series slips past 2026-10-29 the
 // user-2 date stops being valid and the whole premise needs rethinking,
 // not just a date bump.
-const SOURCES_TO_CREATE = ['nerm']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
+const SOURCES_TO_CREATE = ['ellucian']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
 const LIFECYCLE: LifecycleState = 'prehire';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
