@@ -340,6 +340,7 @@ def build_my_rush_jobs_row(
     start_date: str | None = None,
     primary_position: str | None = None,
     oneup_manager_employee_id: str | None = None,
+    end_date: str | None = None,
 ) -> dict:
     """One fully populated My_Rush_Jobs row: identity scaffold (this
     function — name/date/generated-ID fields, the same for every source)
@@ -369,6 +370,18 @@ def build_my_rush_jobs_row(
     network ID of that other identity isn't implied by its employee ID
     (Copley's own template, for instance, carries the same digits in both
     while RUSH's carries a username in the network ID).
+
+    end_date, if given, overrides the lifecycle's computed End_Date
+    (today + 180 days for every lifecycle except termed/inactive). Pass the
+    literal string "BLANK" (or "NULL"/"NONE", case-insensitive) to store a
+    genuinely empty End_Date - to_insert_sql() emits None as SQL NULL -
+    which is what a futurehire/prehire test user with no scheduled end
+    needs; pass a YYYY-MM-DD date to set a specific one. Added 2026-10-27
+    per user request (futurehire/prehire lifecycle-transition test users
+    specified with a blank End_Date). Status/IIQDisabled/Start_Date still
+    come from `lifecycle` and `start_date` as usual, so this only blanks
+    the end - it does not make the identity read as never-ending in any
+    other column.
 
     birth_date must be generated ONCE per identity and passed in explicitly
     by multi-source callers (generate_identity.py) — calling this per source
@@ -459,6 +472,22 @@ def build_my_rush_jobs_row(
         # Applied after the structural merge so it takes precedence over the
         # source template's own constant — see the docstring above.
         row["OneUp_Manager_Employee_ID"] = oneup_manager_employee_id
+    if end_date is not None:
+        # Applied after the structural merge for the same reason as the
+        # overrides above. "BLANK"/"NULL"/"NONE" mean a genuinely empty
+        # End_Date (None -> SQL NULL via to_insert_sql()); anything else
+        # must be a real YYYY-MM-DD date, validated here rather than
+        # silently storing a typo that only surfaces as a bad row in the DB.
+        if end_date.strip().upper() in {"BLANK", "NULL", "NONE", ""}:
+            row["End_Date"] = None
+        else:
+            try:
+                row["End_Date"] = date.fromisoformat(end_date).isoformat()
+            except ValueError:
+                raise SystemExit(
+                    f'--end-date "{end_date}" is not a valid date. Use YYYY-MM-DD, '
+                    f'or "BLANK" to leave End_Date empty.'
+                ) from None
     missing = [c for c in MY_RUSH_JOBS_COLUMNS if c not in row]
     if missing:
         raise AssertionError(f"Source \"{source_key}\" template is missing columns: {missing}")

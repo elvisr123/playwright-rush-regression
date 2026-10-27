@@ -67,6 +67,15 @@ export interface GenerateOptions {
    * (separate attribute; the network ID isn't implied by the employee ID).
    */
   oneUpManagerEmployeeId?: string;
+  /**
+   * Override End_Date instead of the lifecycle's computed value (today +
+   * 180 days). Pass 'BLANK' to leave it genuinely empty (stored as SQL
+   * NULL) — what a futurehire/prehire test user with no scheduled end
+   * needs — or a 'YYYY-MM-DD' date to set a specific one. Status,
+   * IIQDisabled and Start_Date still come from the lifecycle and
+   * startDate as usual, so this blanks only the end date.
+   */
+  endDate?: string;
 }
 
 /**
@@ -119,6 +128,7 @@ export function runGenerator(
   if (opts.startDate) args.push('--start-date', opts.startDate);
   if (opts.primaryPosition) args.push('--primary-position', opts.primaryPosition);
   if (opts.oneUpManagerEmployeeId) args.push('--oneup-manager-employee-id', opts.oneUpManagerEmployeeId);
+  if (opts.endDate) args.push('--end-date', opts.endDate);
 
   const [pythonCmd, ...pythonPrefixArgs] = resolvePython();
   const stdout = execFileSync(pythonCmd, [...pythonPrefixArgs, ...args], { encoding: 'utf8', timeout: 60_000 });

@@ -168,6 +168,17 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--end-date", default=None, dest="end_date",
+        help=(
+            "Override End_Date instead of the lifecycle's computed value "
+            "(today + 180 days). Pass BLANK (or NULL/NONE) to leave it "
+            "genuinely empty — stored as SQL NULL — which is what a "
+            "futurehire/prehire test user with no scheduled end needs. "
+            "Otherwise pass a YYYY-MM-DD date. Status/IIQDisabled/Start_Date "
+            "still come from --lifecycle/--start-date as usual."
+        ),
+    )
+    parser.add_argument(
         "--oneup-manager-employee-id", default=None, dest="oneup_manager_employee_id",
         help=(
             "Override OneUp_Manager_Employee_ID instead of the source "
@@ -208,7 +219,7 @@ def main() -> None:
         key = stage_key(cfg["prefix"], number)
         row = build_my_rush_jobs_row(
             source_key, key, number, first, last, args.lifecycle, birth_date, args.correlation_key, args.start_date,
-            args.primary_position, args.oneup_manager_employee_id,
+            args.primary_position, args.oneup_manager_employee_id, args.end_date,
         )
         save_row(row)
         append_identity(args.lifecycle, row)
