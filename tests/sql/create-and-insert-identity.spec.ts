@@ -118,12 +118,13 @@ const END_DATE: string | undefined = undefined; // 'BLANK' | 'YYYY-MM-DD'
 // over LIFECYCLE='processing's own 'NO' default.
 const PRIMARY_POSITION: 'YES' | 'NO' | undefined = undefined;
 // Override OneUp_Manager_Employee_ID instead of the source template's own
-// value. Every source's template value is now NULL (2026-10-23): the real
-// Rush employees the templates used to name as manager/one-up manager were
-// replaced with 'default.manager' + NULL manager IDs per the standing rule
-// that test identities must never point at real users — see
-// identity-factory/source_templates.py and AGENTS.md. So leaving this
-// undefined means "no one-up manager", not "the template's person".
+// value. As of 2026-10-29 every source template names the same TEST
+// identities — manager MaeveAA Yamamoto (259921), one-up FionaAA Lambert
+// (253476) — so leaving this undefined now means "FionaAA Lambert", not
+// "no one-up manager". Between 2026-10-23 and 2026-10-29 the templates
+// carried 'default.manager' + NULL IDs instead, which satisfied the
+// no-real-people rule but left the manager unresolvable in SailPoint;
+// see identity-factory/source_templates.py and AGENTS.md.
 // Set it only to point the one-up manager at a specific TEST identity's
 // employee ID (that identity's own User_ID), never a real employee's. The
 // previous value here, '259921' (Copley test identity MaeveAA Yamamoto),

@@ -8,15 +8,32 @@ by user_payload.build_my_rush_jobs_row's scaffold.
 All 6 sources ("copley", "rush", "echo", "ellucian", "nerm", "workday") are
 populated as of 2026-10-01.
 
-RULE for every template here (standing user rule, applied 2026-10-23): the
-manager and one-up manager must never be real Rush people. Every source now
-carries Manager_Name="default.manager" with Manager_Username/
-Manager_Employee_ID/OneUp_Manager_Employee_ID/OneUp_Manager_Network_ID NULL -
-so when you populate a new source from a real reference row below, strip its
-manager fields the same way instead of copying them across. Point the one-up
-manager at a specific test identity only via
-create-and-insert-identity.spec.ts's ONEUP_MANAGER_EMPLOYEE_ID (a test
-identity's own User_ID), never a real employee's.
+RULE for every template here (standing user rule, applied 2026-10-23,
+revised 2026-10-29): the manager and one-up manager must never be real Rush
+people. When you populate a new source from a real reference row below,
+strip its manager fields instead of copying them across.
+
+Every source now names the SAME test identities (2026-10-29):
+    Manager  MaeveAA Yamamoto  / 259921  (CL-2608259921TESTCL000AA)
+    One-up   FionaAA Lambert   / 253476  (CL-2608253476TESTCL000AA)
+Both are Copley Lawson test identities. This replaced the
+Manager_Name="default.manager" + all-NULL-IDs shape used between 2026-10-23
+and 2026-10-29: that satisfied the no-real-people rule but left the manager
+unresolvable in SailPoint, because the identity link resolves off
+Manager_Employee_ID/Manager_Username and those were NULL -
+"default.manager" is only a display string, not an identity. Identities
+created in that window have no manager; nothing migrates them.
+
+One test manager is used across all 6 sources deliberately, even though the
+original real templates disagreed on the shape of OneUp_Manager_Network_ID
+(Copley carried digits there, RUSH a username). That disagreement was an
+artifact of each template being copied from a different real row; with a
+single test manager everywhere, consistency is worth more than mimicking
+it, so the network ID carries the one-up manager's username.
+
+Override per run via create-and-insert-identity.spec.ts's
+ONEUP_MANAGER_EMPLOYEE_ID (a test identity's own User_ID) - never a real
+employee's.
 
 To add a source: pull a real, known-good reference row for it — e.g. via
 tests/helpers/dbClient.ts's getStagingRow() against a Stage_Key already used
@@ -64,13 +81,13 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         #   Manager_Name "REES, SHERRY A.", Manager_Username/
         #   Manager_Employee_ID "99314", OneUp_Manager_Employee_ID/
         #   OneUp_Manager_Network_ID "107641".
-        "Manager_Name": "default.manager",
+        "Manager_Name": "MaeveAA Yamamoto",
         "Primary_Position": "YES",
         "Relationship_Status": "ACTIVE REGULAR",
-        "Manager_Username": None,
-        "Manager_Employee_ID": None,
-        "OneUp_Manager_Employee_ID": None,
-        "OneUp_Manager_Network_ID": None,
+        "Manager_Username": "MaeveAA Yamamoto",
+        "Manager_Employee_ID": "259921",
+        "OneUp_Manager_Employee_ID": "253476",
+        "OneUp_Manager_Network_ID": "FionaAA Lambert",
         "Work_Phone_Number": "1678777754",
         "Work_Hours": "8hours",
     },
@@ -124,16 +141,16 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         #   Manager_Name "Phalen, Lisa", Manager_Username "LPHALEN",
         #   Manager_Employee_ID "042558", OneUp_Manager_Employee_ID
         #   "181609", OneUp_Manager_Network_ID "KPIERRE".
-        "Manager_Name": "default.manager",
+        "Manager_Name": "MaeveAA Yamamoto",
         "Primary_Position": "YES",
         # Per user decision (2026-09-22): "ACTIVE REGULAR" for active
         # identities, not the real sample's "Inactive" (see note above).
         "Relationship_Status": "ACTIVE REGULAR",
         "Salary_Structure": "PCT-PCT ADV",
-        "Manager_Username": None,
-        "Manager_Employee_ID": None,
-        "OneUp_Manager_Employee_ID": None,
-        "OneUp_Manager_Network_ID": None,
+        "Manager_Username": "MaeveAA Yamamoto",
+        "Manager_Employee_ID": "259921",
+        "OneUp_Manager_Employee_ID": "253476",
+        "OneUp_Manager_Network_ID": "FionaAA Lambert",
         "Work_Phone_Number": None,
         "Work_Hours": "12",
         "Do_Not_Rehire": "false",
@@ -186,14 +203,14 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         # misalignment in this specific sandbox record (that value belongs
         # under Relationship_Status, not Manager_Name) — used the
         # design-doc-confirmed value here rather than copying it blind.
-        "Manager_Name": "default.manager",
+        "Manager_Name": "MaeveAA Yamamoto",
         "Primary_Position": "YES",
         "Relationship_Status": "ACTIVE REGULAR",
         "Salary_Structure": None,
-        "Manager_Username": None,
-        "Manager_Employee_ID": None,
-        "OneUp_Manager_Employee_ID": None,
-        "OneUp_Manager_Network_ID": None,
+        "Manager_Username": "MaeveAA Yamamoto",
+        "Manager_Employee_ID": "259921",
+        "OneUp_Manager_Employee_ID": "253476",
+        "OneUp_Manager_Network_ID": "FionaAA Lambert",
         "Work_Phone_Number": None,
         "Work_Hours": None,
         "Do_Not_Rehire": None,
@@ -247,14 +264,14 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         # assigned the default manager (default.manager) in ISC — matches
         # this real sample directly (both the raw account and identity-cube
         # views show "default.manager").
-        "Manager_Name": "default.manager",
+        "Manager_Name": "MaeveAA Yamamoto",
         "Primary_Position": "YES",
         "Relationship_Status": None,
         "Salary_Structure": None,
-        "Manager_Username": None,
-        "Manager_Employee_ID": None,
-        "OneUp_Manager_Employee_ID": None,
-        "OneUp_Manager_Network_ID": None,
+        "Manager_Username": "MaeveAA Yamamoto",
+        "Manager_Employee_ID": "259921",
+        "OneUp_Manager_Employee_ID": "253476",
+        "OneUp_Manager_Network_ID": "FionaAA Lambert",
         "Work_Phone_Number": None,
         "Work_Hours": None,
         "Do_Not_Rehire": None,
@@ -300,14 +317,14 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         # populated from source data" for this source resolved to a real
         # Rush username ("acopela3") in the reference sample. The one-up
         # manager fields were already NULL here.
-        "Manager_Name": "default.manager",
+        "Manager_Name": "MaeveAA Yamamoto",
         "Primary_Position": "YES",
         "Relationship_Status": None,
         "Salary_Structure": None,
-        "Manager_Username": None,
-        "Manager_Employee_ID": None,
-        "OneUp_Manager_Employee_ID": None,
-        "OneUp_Manager_Network_ID": None,
+        "Manager_Username": "MaeveAA Yamamoto",
+        "Manager_Employee_ID": "259921",
+        "OneUp_Manager_Employee_ID": "253476",
+        "OneUp_Manager_Network_ID": "FionaAA Lambert",
         "Work_Phone_Number": "5712882223",
         "Work_Hours": None,
         "Do_Not_Rehire": "no",
@@ -362,16 +379,16 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         #   Manager_Name "IsmaelPD p Fisher", Manager_Username "tsep",
         #   Manager_Employee_ID "19087701", OneUp_Manager_Employee_ID
         #   "20100001", OneUp_Manager_Network_ID "ntruckenbro2".
-        "Manager_Name": "default.manager",
+        "Manager_Name": "MaeveAA Yamamoto",
         "Primary_Position": "YES",
         # Sample value was the literal string "true", unlike Copley's
         # descriptive "ACTIVE REGULAR" — kept as-is per the real sample
         # rather than guessing a descriptive equivalent.
         "Relationship_Status": "true",
-        "Manager_Username": None,
-        "Manager_Employee_ID": None,
-        "OneUp_Manager_Employee_ID": None,
-        "OneUp_Manager_Network_ID": None,
+        "Manager_Username": "MaeveAA Yamamoto",
+        "Manager_Employee_ID": "259921",
+        "OneUp_Manager_Employee_ID": "253476",
+        "OneUp_Manager_Network_ID": "FionaAA Lambert",
         "Work_Phone_Number": "1700005543",
         "Work_Hours": "Variable_time",
         # Per user decision (2026-09-18): the 2026-09-15 sample's NULL here
