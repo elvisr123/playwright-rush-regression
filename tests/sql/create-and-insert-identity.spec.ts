@@ -59,11 +59,11 @@ import { LifecycleState } from '../config/lifecycles';
 //   run 1 of 5 ['rush']        DONE 2026-10-29
 //   run 2 of 5 ['copley']      DONE 2026-10-29
 //   run 3 of 5 ['nerm']        DONE 2026-10-29
-//   run 4 of 5 ['echo']        <-- set below
-//   run 5 of 5 ['ellucian']
+//   run 4 of 5 ['echo']        DONE 2026-10-29
+//   run 5 of 5 ['ellucian']    <-- set below  (LAST of the series)
 //
 // Only SOURCES_TO_CREATE changes between runs; everything else stays put.
-const SOURCES_TO_CREATE = ['echo']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
+const SOURCES_TO_CREATE = ['ellucian']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
 const LIFECYCLE: LifecycleState = 'active';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
