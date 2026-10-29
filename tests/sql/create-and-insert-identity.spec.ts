@@ -40,44 +40,31 @@ import { LifecycleState } from '../config/lifecycles';
 // Copley CL-9001179302673280ER, and a multi-source Copley+RUSH pair
 // CL-/RL-9001179302687548ER), plus a second Copley+RUSH identity.
 //
-// CURRENT SERIES — requested 2026-10-27: two lifecycle-transition test
-// users, each created SEPARATELY in 5 sources. That is 10 independent
-// identities, NOT 2 multi-source ones: SOURCES_TO_CREATE holds exactly
-// ONE source per run, so each run allocates its own name and number.
-// FIRST/LAST/NUMBER/BIRTH_DATE/CORRELATION_KEY stay undefined throughout.
+// DONE 2026-10-27 — two lifecycle-transition users, each created
+// SEPARATELY in 5 sources (10 independent identities):
+//   USER 1  futurehire, Start_Date 2026-11-25, End_Date blank
+//   USER 2  prehire,    Start_Date 2026-10-29, End_Date blank
+//           RL-9001179312473769ER  CL-9001179312497065ER
+//           EC-9001179312546777ER  NE-9001179312563424ER
+//           ES-9001179312581033ER
 //
-//   USER 1 — futurehire, Start_Date 2026-11-25, End_Date blank
-//     run  1 ['rush']        DONE 2026-10-27
-//     run  2 ['copley']      DONE 2026-10-27
-//     run  3 ['echo']        DONE 2026-10-27
-//     run  4 ['nerm']        DONE 2026-10-27
-//     run  5 ['ellucian']    DONE 2026-10-27  (USER 1 complete)
-//   USER 2 — prehire, Start_Date 2026-10-29, End_Date blank
-//     run  6 ['rush']        DONE 2026-10-27
-//     run  7 ['copley']      DONE 2026-10-27
-//     run  8 ['echo']        DONE 2026-10-27
-//     run  9 ['nerm']        DONE 2026-10-27
-//     run 10 ['ellucian']    <-- set below  (LAST of the series)
+// CURRENT SERIES — requested 2026-10-29: five ACTIVE users, one per
+// source. Five independent identities, one source per run, each with its
+// own name and number. No date overrides this time — START_DATE and
+// END_DATE are back to undefined, so 'active' supplies its own defaults
+// (Start_Date = yesterday, End_Date = today + 180). Do NOT leave the
+// previous series' '2026-10-29'/'BLANK' in place; neither was asked for
+// here, and START_DATE would now resolve to today rather than yesterday.
 //
-// Runs 1-5 need LIFECYCLE='futurehire' + START_DATE='2026-11-25'.
-// Runs 6-10 need LIFECYCLE='prehire'   + START_DATE='2026-10-29'.
-// END_DATE='BLANK' for all ten.
+//   run 1 of 5 ['rush']        <-- set below
+//   run 2 of 5 ['copley']
+//   run 3 of 5 ['nerm']
+//   run 4 of 5 ['echo']
+//   run 5 of 5 ['ellucian']
 //
-// The point of these two is the lifecycle transition at a date boundary:
-// user 1 reads futurehire on Oct 27 and prehire after midnight Oct 28;
-// user 2 reads prehire on Oct 27 and active after midnight Oct 28. That is
-// why Start_Date is overridden rather than left to the lifecycle default
-// (futurehire's own default is today+35, prehire's today+14, neither of
-// which lands on the boundary being tested) and why End_Date must be blank
-// rather than the computed today+180.
-//
-// NOTE the generator's guard: a START_DATE override on futurehire/prehire
-// must itself be in the future, or it raises SystemExit. Both dates above
-// are — but they are ABSOLUTE, so if this series slips past 2026-10-29 the
-// user-2 date stops being valid and the whole premise needs rethinking,
-// not just a date bump.
-const SOURCES_TO_CREATE = ['ellucian']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
-const LIFECYCLE: LifecycleState = 'prehire';
+// Only SOURCES_TO_CREATE changes between runs; everything else stays put.
+const SOURCES_TO_CREATE = ['rush']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
+const LIFECYCLE: LifecycleState = 'active';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
 // To add another source to an identity that already exists (e.g. someone
@@ -119,13 +106,13 @@ const CORRELATION_KEY: string | undefined = undefined;
 // End_Date/Status/IIQDisabled still come from LIFECYCLE as usual.
 // For futurehire/prehire, leave undefined to use the computed future date;
 // the generator rejects an override that is today or in the past.
-const START_DATE: string | undefined = '2026-10-29'; // 'YYYY-MM-DD'
+const START_DATE: string | undefined = undefined; // 'YYYY-MM-DD'
 // Override End_Date instead of the lifecycle's computed value (today +
 // 180 days). Set to 'BLANK' to leave it genuinely empty (stored as SQL
 // NULL) — what a futurehire/prehire test user with no scheduled end
 // needs — or a 'YYYY-MM-DD' date for a specific one. Leave undefined for
 // the lifecycle default. Status/IIQDisabled/Start_Date are unaffected.
-const END_DATE: string | undefined = 'BLANK'; // 'BLANK' | 'YYYY-MM-DD'
+const END_DATE: string | undefined = undefined; // 'BLANK' | 'YYYY-MM-DD'
 // Override Primary_Position ('YES'/'NO') instead of every source's template
 // default ('YES') — e.g. for a non-primary test user. Takes precedence even
 // over LIFECYCLE='processing's own 'NO' default.
