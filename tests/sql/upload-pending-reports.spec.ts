@@ -46,6 +46,33 @@ import { BATCH_EVIDENCE_FOLDER_URL, BATCH_MANIFEST_PATH, ROWS_TO_DOCUMENT, readB
 // firstName rather than equal it, and the last token must equal lastName.
 const REPORT_DIR = 'temp';
 
+// Each file is retried, because a single upload is only about half
+// reliable. Observed 2026-11-06, serially, with --workers=1 already in
+// place: results alternated almost exactly FAIL/OK/FAIL/OK, every failure
+// being "Target page, context or browser has been closed" on the REST call
+// and then again on the UI fallback.
+//
+// Likely mechanism (not yet proven, and not fixed here): the upload kills
+// and relaunches Chrome on a FIXED CDP port (9878) against one shared
+// profile dir. When the previous Chrome has not finished dying, the new
+// launch sees the profile in use and exits immediately, so the port still
+// belongs to the old instance — connectOverCDP then attaches to a browser
+// that is shutting down, and it closes mid-upload. The next iteration finds
+// it properly dead and succeeds, which is exactly the alternation.
+//
+// The real fix belongs in sharepointUpload.ts (wait for the CDP port to be
+// free, or use a per-call port), but that helper is on the critical path of
+// every tests/sources/** spec, so it is deliberately not touched from this
+// recovery tool. Retrying here is enough to converge: at ~50% per attempt,
+// three attempts clears a file ~88% of the time, and re-running the command
+// retries whatever is left.
+const UPLOAD_ATTEMPTS = 3;
+
+// Give Chrome time to actually exit before the next attempt reuses the
+// profile and port — the whole failure mode is launching too soon after a
+// teardown.
+const SETTLE_MS = 8_000;
+
 const REPORT_NAME = /^(.+)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.docx$/i;
 
 /** The manifest entry this report belongs to, or undefined if it isn't ours. */
@@ -114,22 +141,37 @@ test('Upload any report .docx left in temp/ to the batch evidence folder', async
   for (const file of files) {
     const full = path.join(dir, file);
     console.log(`--- ${file} ---`);
-    try {
-      const published = await uploadFileToSharePointFolder(full, file, BATCH_EVIDENCE_FOLDER_URL);
-      if (published) {
-        // Same contract as run_regression_case: the local copy is staging,
-        // deleted only once the file is actually in SharePoint.
-        removeLocalReportCopy(full);
-        uploaded++;
-        console.log(`  uploaded and removed local copy`);
-      } else {
-        failures.push(`${file}: upload skipped (SHAREPOINT_UPLOAD disabled?) — kept at ${full}`);
-        console.log(`  skipped — kept locally`);
+    let lastError = '';
+    let done = false;
+
+    for (let attempt = 1; attempt <= UPLOAD_ATTEMPTS && !done; attempt++) {
+      if (attempt > 1) {
+        console.log(`  attempt ${attempt}/${UPLOAD_ATTEMPTS} after ${SETTLE_MS / 1000}s settle…`);
+        await new Promise((r) => setTimeout(r, SETTLE_MS));
       }
-    } catch (err) {
-      failures.push(`${file}: ${(err as Error).message}`);
-      console.log(`  FAILED — ${(err as Error).message}`);
+      try {
+        const published = await uploadFileToSharePointFolder(full, file, BATCH_EVIDENCE_FOLDER_URL);
+        if (published) {
+          // Same contract as run_regression_case: the local copy is
+          // staging, deleted only once the file is actually in SharePoint.
+          removeLocalReportCopy(full);
+          uploaded++;
+          done = true;
+          console.log(`  uploaded and removed local copy`);
+        } else {
+          // Not retried: a falsy return means uploading is switched off
+          // (SHAREPOINT_UPLOAD=false), which no amount of retrying changes.
+          lastError = `upload skipped (SHAREPOINT_UPLOAD disabled?) — kept at ${full}`;
+          console.log(`  skipped — kept locally`);
+          break;
+        }
+      } catch (err) {
+        lastError = (err as Error).message;
+        console.log(`  attempt ${attempt} failed — ${lastError}`);
+      }
     }
+
+    if (!done) failures.push(`${file}: ${lastError}`);
   }
 
   console.log(`\n${uploaded} of ${files.length} uploaded to Evidence_Nov_11_2026.`);
