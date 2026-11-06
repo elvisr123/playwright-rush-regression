@@ -405,6 +405,17 @@ Deliberately **not** run from the Mac: the generator itself, because `generate_i
 
 - **Pre-existing oddity, left alone**: `tests/sources/echo/active.spec.ts`'s hardcoded fallback Stage_Key is `RL-98100122712TESTCL000PD` — an `RL-` (RUSH Lawson) key in an ECHO spec, identical to `rush-lawson/active.spec.ts`'s. Either that identity genuinely has both accounts, or it is a copy-paste leftover and the ECHO spec has been documenting a RUSH account. The batch manifest overrides it either way, so it does not affect this run; worth checking before relying on that spec outside a batch.
 
+## SharePoint uploads are single-threaded — never run them in parallel
+
+`uploadFileToSharePointFolder` begins with `stopChromeUsingProfile(UPLOAD_PROFILE_DIR)`, which **kills every Chrome using the shared upload profile** (`playwright/.auth/chrome-sharepoint`) before launching its own. That is fine for one upload at a time and fatal for several: each worker's first act is to kill the upload a sibling worker is in the middle of.
+
+Hit live on 2026-11-06. `batch:document` ran 8 specs on 4 workers; **all 8 sandbox walkthroughs succeeded and built their reports**, then all 8 uploads failed with `Target page, context or browser has been closed` — on the REST attempt *and* the UI fallback, since both drive that one profile.
+
+- **`batch:document` now passes `--workers=1`.** Serial is the only safe setting until the profile contention is fixed properly. The cost is wall-clock only.
+- **Nothing is lost when an upload fails.** `uploadFileToSharePointFolder` throws, so `removeLocalReportCopy` never runs and the finished `.docx` stays in `temp/`.
+- **`npm run batch:upload-reports`** (`tests/sql/upload-pending-reports.spec.ts`) uploads every `.docx` left in `temp/` to the batch evidence folder, one at a time, deleting each local copy only once it lands. Use it after an upload-only failure instead of re-running walkthroughs to rebuild identical files. It is serial by construction — do not parallelize it.
+- A proper fix would be a cross-process lock around the upload (workers are separate processes, so it has to be file-based) or a per-worker profile — the latter needs its own SSO sign-in per profile, so the lock is the better route. Not built; `--workers=1` is the current answer.
+
 ## Login / MFA
 
 `tests/auth.setup.ts` reuses `playwright/.auth/user.json` for **60 minutes** and re-logs in after that. If the re-login hits an Okta MFA challenge, a headless run cannot clear it — nobody can approve a push or type a code — so the `waitForURL` burns its full 120s and the `setup` project fails, taking every dependent spec with it ("8 did not run"). Hit live on 2026-11-06 during `batch:document`.
