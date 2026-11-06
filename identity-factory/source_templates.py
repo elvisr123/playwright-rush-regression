@@ -13,11 +13,16 @@ revised 2026-10-29): the manager and one-up manager must never be real Rush
 people. When you populate a new source from a real reference row below,
 strip its manager fields instead of copying them across.
 
-COPLEY uses the manager the user supplied on 2026-11-06 (scoped to Copley
-only at their correction):
-    Manager  jyates / 019811        (Manager_Name mirrors the username)
-    One-up   982564                 (network ID carries the same digits)
-The other 5 sources still name the test identities set on 2026-10-29:
+Three sources use managers the user supplied on 2026-11-06 - copley first
+(scoped to copley alone at their correction), then rush and nerm later the
+same day. In all three, Manager_Name mirrors the username and
+OneUp_Manager_Network_ID carries the one-up's digits, because the user gave
+only an employee ID / username / one-up ID for each:
+    copley   jyates   / 019811      one-up 982564
+    rush     kbarr    / 981715      one-up 981453
+    nerm     mparris1 / 1933000635  one-up 19234400
+The remaining 2 sources (echo, ellucian) still name the test identities set
+on 2026-10-29:
     Manager  MaeveAA Yamamoto  / 259921  (CL-2608259921TESTCL000AA)
     One-up   FionaAA Lambert   / 253476  (CL-2608253476TESTCL000AA)
 Those two are Copley Lawson test identities. The 2026-10-29 change replaced the
@@ -140,28 +145,36 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         "Title": "Patient Care Tech",
         "Job_Code": "34",
         "Job_Family": "LICCERTECH",
-        # Manager/one-up manager de-realified 2026-10-23 per user rule
-        # ("Change Manager and Oneupmanager - Do not use real time users,
-        # only use test users"): this template's values were copied from a
-        # real reference row and named actual Rush employees, which a
-        # synthetic test identity must not point at. Replaced with the same
-        # shape ECHO/Ellucian already used - "default.manager" plus NULL
-        # manager/one-up IDs - rather than another named person, per the
-        # user's choice of the default.manager option. Real values kept
-        # here only as a comment, for traceability back to the sample:
-        #   Manager_Name "Phalen, Lisa", Manager_Username "LPHALEN",
-        #   Manager_Employee_ID "042558", OneUp_Manager_Employee_ID
-        #   "181609", OneUp_Manager_Network_ID "KPIERRE".
-        "Manager_Name": "MaeveAA Yamamoto",
+        # Manager/one-up manager supplied by the user 2026-11-06 ("Rush
+        # Manager Details - Manager EmployeeID 981715, Manager Username
+        # kbarr, OneUp Manager EmployeeID 981453"), in the same message
+        # that gave NERM's. As with copley, the user named no display name
+        # and no one-up network ID, so the same two choices they made for
+        # copley are applied: Manager_Name mirrors the username and
+        # OneUp_Manager_Network_ID carries the one-up's digits.
+        #
+        # NOTE this changes RUSH's network-ID SHAPE. Its original real row
+        # carried a username there ("KPIERRE") while copley carried digits
+        # - and matching that here would need 981453's username, which the
+        # user did not give. Digits is therefore the only option, and it
+        # agrees with copley. Earlier values, for traceability:
+        #   2026-10-29  MaeveAA Yamamoto / 259921, one-up FionaAA Lambert
+        #               / 253476 (network ID "FionaAA Lambert").
+        #   2026-10-23  "default.manager" + all-NULL manager IDs.
+        #   real sample Manager_Name "Phalen, Lisa", Manager_Username
+        #               "LPHALEN", Manager_Employee_ID "042558",
+        #               OneUp_Manager_Employee_ID "181609",
+        #               OneUp_Manager_Network_ID "KPIERRE".
+        "Manager_Name": "kbarr",
         "Primary_Position": "YES",
         # Per user decision (2026-09-22): "ACTIVE REGULAR" for active
         # identities, not the real sample's "Inactive" (see note above).
         "Relationship_Status": "ACTIVE REGULAR",
         "Salary_Structure": "PCT-PCT ADV",
-        "Manager_Username": "MaeveAA Yamamoto",
-        "Manager_Employee_ID": "259921",
-        "OneUp_Manager_Employee_ID": "253476",
-        "OneUp_Manager_Network_ID": "FionaAA Lambert",
+        "Manager_Username": "kbarr",
+        "Manager_Employee_ID": "981715",
+        "OneUp_Manager_Employee_ID": "981453",
+        "OneUp_Manager_Network_ID": "981453",
         "Work_Phone_Number": None,
         "Work_Hours": "12",
         "Do_Not_Rehire": "false",
@@ -323,19 +336,29 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         # "valid manager populated from source data" (not a default) —
         # matches this real sample having an actual named manager rather
         # than default.manager, unlike ECHO/Ellucian above.
-        # Manager de-realified 2026-10-23 per the same user rule as
-        # copley/rush/workday above - the design doc's "valid manager
-        # populated from source data" for this source resolved to a real
-        # Rush username ("acopela3") in the reference sample. The one-up
-        # manager fields were already NULL here.
-        "Manager_Name": "MaeveAA Yamamoto",
+        #
+        # Manager/one-up manager supplied by the user 2026-11-06
+        # ("Non-Employee Workforce Details - Manager EmployeeID
+        # 1933000635, Manager Username mparris1, OneUp Manager EmployeeID
+        # 19234400"), in the same message that gave RUSH's. Same two
+        # choices as copley for the fields the user did not name:
+        # Manager_Name mirrors the username, OneUp_Manager_Network_ID
+        # carries the one-up's digits. Note Manager_Employee_ID is 10
+        # digits here, unlike the 6 of copley/rush - that is the user's
+        # value as given, not a typo to normalize. Earlier values:
+        #   2026-10-29  MaeveAA Yamamoto / 259921, one-up FionaAA Lambert
+        #               / 253476 (network ID "FionaAA Lambert").
+        #   2026-10-23  "default.manager" + all-NULL manager IDs; the
+        #               one-up fields were already NULL before that.
+        #   real sample Manager_Username "acopela3".
+        "Manager_Name": "mparris1",
         "Primary_Position": "YES",
         "Relationship_Status": None,
         "Salary_Structure": None,
-        "Manager_Username": "MaeveAA Yamamoto",
-        "Manager_Employee_ID": "259921",
-        "OneUp_Manager_Employee_ID": "253476",
-        "OneUp_Manager_Network_ID": "FionaAA Lambert",
+        "Manager_Username": "mparris1",
+        "Manager_Employee_ID": "1933000635",
+        "OneUp_Manager_Employee_ID": "19234400",
+        "OneUp_Manager_Network_ID": "19234400",
         "Work_Phone_Number": "5712882223",
         "Work_Hours": None,
         "Do_Not_Rehire": "no",
