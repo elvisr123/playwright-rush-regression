@@ -326,6 +326,15 @@ npm run batch:document    # phase 3 — sandbox screenshots + Word report per id
 - **No lifecycle date overrides.** The request named no dates, so every row uses its lifecycle's own defaults from `lifecycle_dates()` (futurehire start +35d, prehire +14d, active/processing −1d, all End_Date +180d). Same reasoning as the 2026-10-29 series, which explicitly reset the previous series' `START_DATE`/`END_DATE` rather than inheriting them.
 - **Copley has no `processing` row** because the user's table has none — and there is no `tests/sources/copley-lawson/processing.spec.ts` to document one with. Every other row has a matching source spec. (Side note: `tests/config/lifecycles.ts`'s comment claiming "No `tests/sources/*/processing.spec.ts` exists yet" is stale — five of them do.)
 
+### Adopting rows created elsewhere (2026-11-06)
+
+A teammate had already created 8 of the 16 — Copley (1-3), ECHO (12-15), Ellucian (16) — leaving RUSH (4-7) and NERM (8-11) blank on the user's table ("just run these ones ... that r missing"). Their Stage_Keys are now `existingStageKey` on those `BATCH_ROWS` entries, and phase 1 **adopts** such a row (looks it up in `My_Rush_Jobs`, records it in the manifest) rather than generating one. Without that, finishing a partial batch would mean either creating duplicates or leaving the existing 8 out of the documentation run.
+
+- **The 8 missing rows are exactly the 8 whose templates gained the rush/nerm managers**, so they pick up `kbarr` / `mparris1` at creation and **`batch:repair-managers` is not needed** for this run. The adopted rows predate that change but are copley/echo/ellucian, none of which moved. The repair spec stays as the tool for the general case (and as a check that adopted rows match their template).
+- Adopted entries carry `adopted: true` and `dbVerified: false`. That false is honest rather than a defect — this pipeline did not generate them, so there is no generated row to compare against — and both the override log and the printed table say "adopted" instead of warning about failed verification.
+- Phase 1's closing "aggregate these sources" list covers **only newly created** rows, so it names RUSH and NERM rather than sending you through five aggregations when two are needed.
+- Verified offline: 8 create / 8 adopt, split exactly on the user's table, with the adopted keys surfacing correctly in `formatBatchTable`.
+
 ### Phase 1 — `tests/sql/create-batch-identities.spec.ts`
 
 Loops the 16 rows: `runGenerator([source], lifecycle)` → the same three live-DB duplicate checks the single-identity spec runs (name, Stage_Key, User_ID) → INSERT → read back and compare every generated field with `evaluateCheck`.

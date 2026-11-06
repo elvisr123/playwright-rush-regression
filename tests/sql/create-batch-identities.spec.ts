@@ -137,6 +137,54 @@ test('Create the 16-identity batch — INSERT + DB verify, no SSMS', async () =>
       continue;
     }
 
+    // Rows the user marked as already created elsewhere (a teammate, or an
+    // earlier run) are ADOPTED, not generated: look the row up, record it in
+    // the manifest so phase 3 documents it, and move on. Without this, a
+    // partially-complete batch could only be finished by either creating
+    // duplicates or losing the existing identities from the documentation
+    // run.
+    if (batchRow.existingStageKey) {
+      console.log(`\n--- S.No ${batchRow.sNo}: ${label} — adopting existing ${batchRow.existingStageKey} ---`);
+      const dbRow = await getStagingRow(TABLE, batchRow.existingStageKey);
+      if (!dbRow) {
+        failures.push({
+          sNo: batchRow.sNo,
+          label,
+          reason: `existingStageKey "${batchRow.existingStageKey}" not found in ${TABLE} — check the Stage_Key`,
+        });
+        console.log(`  NOT FOUND in ${TABLE}.`);
+        continue;
+      }
+      // dbVerified is false for adopted rows and that is honest, not a
+      // defect: this pipeline did not generate them, so there is no
+      // generated row to compare the stored one against. The manager values
+      // are logged so a wrong-looking one is visible here rather than only
+      // in a screenshot later.
+      console.log(
+        `  ${dbRow['Given_Name']} ${dbRow['Family_Name']} — User_ID ${dbRow['User_ID']}, ` +
+          `Status ${dbRow['Status']}, Start_Date ${dbRow['Start_Date']}, ` +
+          `Primary_Position ${dbRow['Primary_Position']}`
+      );
+      console.log(
+        `  Manager ${dbRow['Manager_Name']} / ${dbRow['Manager_Employee_ID']}, ` +
+          `one-up ${dbRow['OneUp_Manager_Employee_ID']}`
+      );
+      entries.push({
+        sNo: batchRow.sNo,
+        sourceKey: batchRow.sourceKey,
+        sourceName,
+        lifecycle: batchRow.lifecycle,
+        stageKey: batchRow.existingStageKey,
+        firstName: dbRow['Given_Name'] ?? '',
+        lastName: dbRow['Family_Name'] ?? '',
+        userId: dbRow['User_ID'] ?? '',
+        dbVerified: false,
+        adopted: true,
+      });
+      writeBatchManifest({ createdAt: new Date().toISOString(), entries });
+      continue;
+    }
+
     console.log(`\n--- S.No ${batchRow.sNo}: ${label} ---`);
 
     let created: BatchManifestEntry | undefined;
@@ -271,17 +319,29 @@ test('Create the 16-identity batch — INSERT + DB verify, no SSMS', async () =>
 
   const manifestPath = writeBatchManifest({ createdAt: new Date().toISOString(), entries });
 
+  const adoptedCount = entries.filter((e) => e.adopted).length;
   console.log(`\n${'='.repeat(78)}`);
-  console.log(`Batch created ${entries.length} of ${BATCH_ROWS.length} identities.`);
+  console.log(
+    `Batch has ${entries.length} of ${BATCH_ROWS.length} identities — ` +
+      `${entries.length - adoptedCount} created here, ${adoptedCount} adopted from existing rows.`
+  );
   console.log(`Manifest: ${manifestPath}`);
   console.log(`${'='.repeat(78)}\n`);
   console.log(formatBatchTable(entries));
-  console.log(
-    `\nNEXT — aggregate these ${new Set(entries.map((e) => e.sourceName)).size} source(s) once each in the sandbox UI ` +
-      `(Admin > Sources > [source] > Import/Aggregate):\n` +
-      [...new Set(entries.map((e) => e.sourceName))].map((s) => `  - ${s}`).join('\n') +
-      `\n\nThen run:  npx playwright test tests/sources/\n`
-  );
+  // Only sources with NEWLY created rows need aggregating — the adopted
+  // ones were already aggregated by whoever created them, and listing them
+  // here would send you to re-run five aggregations when two are needed.
+  const sourcesNeedingAggregation = [...new Set(entries.filter((e) => !e.adopted).map((e) => e.sourceName))];
+  if (sourcesNeedingAggregation.length > 0) {
+    console.log(
+      `\nNEXT — aggregate these ${sourcesNeedingAggregation.length} source(s) in the sandbox UI ` +
+        `(Admin > Sources > [source] > Import/Aggregate):\n` +
+        sourcesNeedingAggregation.map((s) => `  - ${s}`).join('\n') +
+        `\n\nThen run:  npm run batch:document\n`
+    );
+  } else {
+    console.log('\nNothing newly created — no aggregation needed. Run: npm run batch:document\n');
+  }
 
   if (failures.length > 0) {
     console.log('Failures:');
