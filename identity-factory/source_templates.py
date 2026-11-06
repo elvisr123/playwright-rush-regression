@@ -13,10 +13,14 @@ revised 2026-10-29): the manager and one-up manager must never be real Rush
 people. When you populate a new source from a real reference row below,
 strip its manager fields instead of copying them across.
 
-Every source now names the SAME test identities (2026-10-29):
+COPLEY uses the manager the user supplied on 2026-11-06 (scoped to Copley
+only at their correction):
+    Manager  jyates / 019811        (Manager_Name mirrors the username)
+    One-up   982564                 (network ID carries the same digits)
+The other 5 sources still name the test identities set on 2026-10-29:
     Manager  MaeveAA Yamamoto  / 259921  (CL-2608259921TESTCL000AA)
     One-up   FionaAA Lambert   / 253476  (CL-2608253476TESTCL000AA)
-Both are Copley Lawson test identities. This replaced the
+Those two are Copley Lawson test identities. The 2026-10-29 change replaced the
 Manager_Name="default.manager" + all-NULL-IDs shape used between 2026-10-23
 and 2026-10-29: that satisfied the no-real-people rule but left the manager
 unresolvable in SailPoint, because the identity link resolves off
@@ -24,12 +28,14 @@ Manager_Employee_ID/Manager_Username and those were NULL -
 "default.manager" is only a display string, not an identity. Identities
 created in that window have no manager; nothing migrates them.
 
-One test manager is used across all 6 sources deliberately, even though the
-original real templates disagreed on the shape of OneUp_Manager_Network_ID
-(Copley carried digits there, RUSH a username). That disagreement was an
-artifact of each template being copied from a different real row; with a
-single test manager everywhere, consistency is worth more than mimicking
-it, so the network ID carries the one-up manager's username.
+The 5 non-Copley sources share one test manager deliberately, even though
+the original real templates disagreed on the shape of
+OneUp_Manager_Network_ID (Copley carried digits there, RUSH a username).
+That disagreement was an artifact of each template being copied from a
+different real row; across those 5, consistency is worth more than
+mimicking it, so the network ID carries the one-up manager's username.
+Copley is now the exception on both counts - its own manager, and digits
+rather than a username in the network ID, matching its original real row.
 
 Override per run via create-and-insert-identity.spec.ts's
 ONEUP_MANAGER_EMPLOYEE_ID (a test identity's own User_ID) - never a real
@@ -69,25 +75,30 @@ SOURCE_TEMPLATES: dict[str, dict] = {
         "Title": "REGISTERED NURSE",
         "Job_Code": "369",
         "Job_Family": "REGISTNURS",
-        # Manager/one-up manager de-realified 2026-10-23 per user rule
-        # ("Change Manager and Oneupmanager - Do not use real time users,
-        # only use test users"): this template's values were copied from a
-        # real reference row and named actual Rush employees, which a
-        # synthetic test identity must not point at. Replaced with the same
-        # shape ECHO/Ellucian already used - "default.manager" plus NULL
-        # manager/one-up IDs - rather than another named person, per the
-        # user's choice of the default.manager option. Real values kept
-        # here only as a comment, for traceability back to the sample:
-        #   Manager_Name "REES, SHERRY A.", Manager_Username/
-        #   Manager_Employee_ID "99314", OneUp_Manager_Employee_ID/
-        #   OneUp_Manager_Network_ID "107641".
-        "Manager_Name": "MaeveAA Yamamoto",
+        # Manager/one-up manager supplied directly by the user 2026-11-06
+        # ("Manager EmployeeID - 019811, Manager Username - jyates, OneUp
+        # Manager EmployeeID - 982564"), scoped to COPLEY ONLY at the
+        # user's correction - the other 5 sources still carry the
+        # 2026-10-29 test manager (MaeveAA Yamamoto / FionaAA Lambert).
+        # The user gave no display name or one-up network ID, so per their
+        # choice Manager_Name mirrors the username and
+        # OneUp_Manager_Network_ID carries the one-up's digits - the shape
+        # this template's original real row used (same value in both
+        # one-up columns). Earlier values, for traceability:
+        #   2026-10-29  MaeveAA Yamamoto / 259921, one-up FionaAA Lambert
+        #               / 253476 (network ID "FionaAA Lambert").
+        #   2026-10-23  "default.manager" + all-NULL manager IDs.
+        #   real sample Manager_Name "REES, SHERRY A.",
+        #               Manager_Username/Manager_Employee_ID "99314",
+        #               OneUp_Manager_Employee_ID/
+        #               OneUp_Manager_Network_ID "107641".
+        "Manager_Name": "jyates",
         "Primary_Position": "YES",
         "Relationship_Status": "ACTIVE REGULAR",
-        "Manager_Username": "MaeveAA Yamamoto",
-        "Manager_Employee_ID": "259921",
-        "OneUp_Manager_Employee_ID": "253476",
-        "OneUp_Manager_Network_ID": "FionaAA Lambert",
+        "Manager_Username": "jyates",
+        "Manager_Employee_ID": "019811",
+        "OneUp_Manager_Employee_ID": "982564",
+        "OneUp_Manager_Network_ID": "982564",
         "Work_Phone_Number": "1678777754",
         "Work_Hours": "8hours",
     },

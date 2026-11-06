@@ -60,10 +60,28 @@ import { LifecycleState } from '../config/lifecycles';
 //   run 2 of 5 ['copley']      DONE 2026-10-29
 //   run 3 of 5 ['nerm']        DONE 2026-10-29
 //   run 4 of 5 ['echo']        DONE 2026-10-29
-//   run 5 of 5 ['ellucian']    <-- set below  (LAST of the series)
+//   run 5 of 5 ['ellucian']    DONE 2026-10-29  (series complete)
+// All five are the identities that came out with no manager in SailPoint,
+// which is what prompted the 2026-10-29 template fix. None of them are
+// migrated.
+//
+// CURRENT — 2026-11-06: one ACTIVE Copley identity, to live-test the
+// manager the user supplied for the copley template that day
+// (Manager_Employee_ID 019811 / Manager_Username jyates, one-up 982564).
+// Copley is the ONLY source carrying those values, so this must stay
+// ['copley'] to exercise them — the other 5 still have the 2026-10-29
+// test manager and would not test anything new.
+//   WATCH the identity's Manager field, not just the account's
+//   Manager_name. Manager_name is a display string and will read
+//   'jyates' no matter what; the identity's Manager only populates if an
+//   identity with employee ID 019811 / username jyates actually exists in
+//   the sandbox. If it does not, expect a blank Manager (the 2026-10-29
+//   failure shape) and a failing 'Manager DN contains OU=Users'
+//   assertion in tests/sources/copley-lawson/active.spec.ts — that would
+//   be the manager data, not a lifecycle bug.
 //
 // Only SOURCES_TO_CREATE changes between runs; everything else stays put.
-const SOURCES_TO_CREATE = ['ellucian']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
+const SOURCES_TO_CREATE = ['copley']; // source keys from identity-factory/user_payload.py's SOURCES — all 6 ('copley', 'rush', 'workday', 'echo', 'ellucian', 'nerm') have a real attribute template. List more than one here to create one identity across multiple sources in a single run.
 const LIFECYCLE: LifecycleState = 'active';
 const FIRST: string | undefined = undefined; // leave undefined for a random, deduped name
 const LAST: string | undefined = undefined;
@@ -118,12 +136,16 @@ const END_DATE: string | undefined = undefined; // 'BLANK' | 'YYYY-MM-DD'
 // over LIFECYCLE='processing's own 'NO' default.
 const PRIMARY_POSITION: 'YES' | 'NO' | undefined = undefined;
 // Override OneUp_Manager_Employee_ID instead of the source template's own
-// value. As of 2026-10-29 every source template names the same TEST
-// identities — manager MaeveAA Yamamoto (259921), one-up FionaAA Lambert
-// (253476) — so leaving this undefined now means "FionaAA Lambert", not
-// "no one-up manager". Between 2026-10-23 and 2026-10-29 the templates
-// carried 'default.manager' + NULL IDs instead, which satisfied the
-// no-real-people rule but left the manager unresolvable in SailPoint;
+// value. Every source template names a manager, so leaving this undefined
+// means the template's one-up, not "no one-up manager":
+//   copley            one-up 982564  (manager jyates / 019811)
+//   the other 5       one-up FionaAA Lambert / 253476
+//                     (manager MaeveAA Yamamoto / 259921)
+// Copley's values were supplied by the user on 2026-11-06 and scoped to
+// that source only; the other 5 still carry the 2026-10-29 test manager.
+// Between 2026-10-23 and 2026-10-29 the templates carried
+// 'default.manager' + NULL IDs instead, which satisfied the no-real-people
+// rule but left the manager unresolvable in SailPoint;
 // see identity-factory/source_templates.py and AGENTS.md.
 // Set it only to point the one-up manager at a specific TEST identity's
 // employee ID (that identity's own User_ID), never a real employee's. The
@@ -132,8 +154,9 @@ const PRIMARY_POSITION: 'YES' | 'NO' | undefined = undefined;
 // this run's requirement is test-user-only managers across both sources.
 // Note this override applies to EVERY source in SOURCES_TO_CREATE, not just
 // one of them — it is not per-source.
-// OneUp_Manager_Network_ID is not overridable here (separate attribute, now
-// NULL in every template).
+// OneUp_Manager_Network_ID is not overridable here — it is a separate
+// My_Rush_Jobs column and setting this does NOT move it, so an override
+// leaves the two one-up columns naming different people.
 const ONEUP_MANAGER_EMPLOYEE_ID: string | undefined = undefined;
 // Opt-in: automatically trigger + wait for SailPoint source aggregation via
 // the API after every row is INSERTed and DB-verified below, instead of
