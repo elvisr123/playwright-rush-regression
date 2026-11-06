@@ -326,14 +326,22 @@ npm run batch:document    # phase 3 — sandbox screenshots + Word report per id
 - **No lifecycle date overrides.** The request named no dates, so every row uses its lifecycle's own defaults from `lifecycle_dates()` (futurehire start +35d, prehire +14d, active/processing −1d, all End_Date +180d). Same reasoning as the 2026-10-29 series, which explicitly reset the previous series' `START_DATE`/`END_DATE` rather than inheriting them.
 - **Copley has no `processing` row** because the user's table has none — and there is no `tests/sources/copley-lawson/processing.spec.ts` to document one with. Every other row has a matching source spec. (Side note: `tests/config/lifecycles.ts`'s comment claiming "No `tests/sources/*/processing.spec.ts` exists yet" is stale — five of them do.)
 
-### Adopting rows created elsewhere (2026-11-06)
+### What actually happened on the 2026-11-06 run, and the duplicates it left
 
-A teammate had already created 8 of the 16 — Copley (1-3), ECHO (12-15), Ellucian (16) — leaving RUSH (4-7) and NERM (8-11) blank on the user's table ("just run these ones ... that r missing"). Their Stage_Keys are now `existingStageKey` on those `BATCH_ROWS` entries, and phase 1 **adopts** such a row (looks it up in `My_Rush_Jobs`, records it in the manifest) rather than generating one. Without that, finishing a partial batch would mean either creating duplicates or leaving the existing 8 out of the documentation run.
+The first `batch:create` **created all 16** — that is what "it ran successfully" meant. Separately, a teammate created Copley, ECHO and Ellucian identities of her own and documented them. So those three sources now have **two** sets of identities:
 
-- **The 8 missing rows are exactly the 8 whose templates gained the rush/nerm managers**, so they pick up `kbarr` / `mparris1` at creation and **`batch:repair-managers` is not needed** for this run. The adopted rows predate that change but are copley/echo/ellucian, none of which moved. The repair spec stays as the tool for the general case (and as a check that adopted rows match their template).
-- Adopted entries carry `adopted: true` and `dbVerified: false`. That false is honest rather than a defect — this pipeline did not generate them, so there is no generated row to compare against — and both the override log and the printed table say "adopted" instead of warning about failed verification.
-- Phase 1's closing "aggregate these sources" list covers **only newly created** rows, so it names RUSH and NERM rather than sending you through five aggregations when two are needed.
-- Verified offline: 8 create / 8 adopt, split exactly on the user's table, with the adopted keys surfacing correctly in `formatBatchTable`.
+| rows | the batch's set (in `temp/batch_manifest.json`) | the teammate's set (`DOCUMENTED_BY_TEAMMATE`) |
+|---|---|---|
+| 1-3 Copley, 12-15 ECHO, 16 Ellucian | created, **not** documented | created **and** documented |
+| 4-11 RUSH, NERM | created, not documented | does not exist — her table left these blank |
+
+Consequences, all decided by the user on 2026-11-06:
+
+- **`batch:document` now covers RUSH and NERM only** (8 specs, not 16) — "NO need to be documented as she already did it". `ROWS_TO_DOCUMENT` in `tests/config/batch.ts` encodes the same split, and her Stage_Keys are recorded in `DOCUMENTED_BY_TEAMMATE` purely as context. Nothing reads them: they are not in the manifest and this pipeline never documents them.
+- **RUSH and NERM are the only single-sourced rows**, which is why they are the ones still needing work.
+- **The 8 unused duplicates are left in place** ("Decide later") — untouched in `My_Rush_Jobs` and SailPoint, not cleaned up. Worth revisiting: they consume `User_ID`s, and copley/rush have only 100 each across the project's history.
+- **`batch:repair-managers` is required after all**, contrary to the earlier note that the missing rows would pick the new managers up at creation. That assumed RUSH/NERM had not been created yet; they had — before the user supplied `kbarr`/`mparris1` — so rows 4-11 carry `MaeveAA Yamamoto` and need repairing, then RUSH + NERM re-aggregated, before documentation means anything.
+- A short-lived `existingStageKey` / adopt path (commit `b0e4cd5`) was **reverted**: it was built on the premise that the teammate's rows were the canonical ones to adopt, and they turned out to be duplicates of rows the batch had already made. The resume check skipped every row before the adopt branch could run, so it never took effect in practice either.
 
 ### Phase 1 — `tests/sql/create-batch-identities.spec.ts`
 

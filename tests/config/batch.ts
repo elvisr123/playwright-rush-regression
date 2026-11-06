@@ -31,31 +31,12 @@ export interface BatchRow {
   /** identity-factory source key (also tests/config/sources.ts's SOURCES key). */
   sourceKey: SourceKey;
   lifecycle: LifecycleState;
-  /**
-   * Set when this row's identity ALREADY EXISTS, created outside this
-   * pipeline — by a teammate, or by an earlier partial run. The creation
-   * spec then ADOPTS the row (looks it up in My_Rush_Jobs and records it in
-   * the manifest) instead of generating a new one, so phase 3 documents all
-   * 16 while only the genuinely missing rows are created.
-   *
-   * Filled in 2026-11-06 from the user's updated table: a teammate had
-   * already created Copley (1-3), ECHO (12-15) and Ellucian (16), leaving
-   * RUSH (4-7) and NERM (8-11) blank — "just run these ones ... that r
-   * missing".
-   *
-   * Convenient consequence: the 8 missing rows are exactly the 8 whose
-   * templates gained the user's rush/nerm managers, so they pick up
-   * kbarr / mparris1 at creation and nothing needs repairing. The adopted
-   * rows were created before that change but are copley/echo/ellucian,
-   * none of which changed.
-   */
-  existingStageKey?: string;
 }
 
 export const BATCH_ROWS: BatchRow[] = [
-  { sNo: 1, sourceKey: 'copley', lifecycle: 'futurehire', existingStageKey: 'CL-9001179398934928ER' },
-  { sNo: 2, sourceKey: 'copley', lifecycle: 'prehire', existingStageKey: 'CL-9001179398944842ER' },
-  { sNo: 3, sourceKey: 'copley', lifecycle: 'active', existingStageKey: 'CL-9001179398951409ER' },
+  { sNo: 1, sourceKey: 'copley', lifecycle: 'futurehire' },
+  { sNo: 2, sourceKey: 'copley', lifecycle: 'prehire' },
+  { sNo: 3, sourceKey: 'copley', lifecycle: 'active' },
   { sNo: 4, sourceKey: 'rush', lifecycle: 'processing' },
   { sNo: 5, sourceKey: 'rush', lifecycle: 'futurehire' },
   { sNo: 6, sourceKey: 'rush', lifecycle: 'prehire' },
@@ -64,12 +45,44 @@ export const BATCH_ROWS: BatchRow[] = [
   { sNo: 9, sourceKey: 'nerm', lifecycle: 'futurehire' },
   { sNo: 10, sourceKey: 'nerm', lifecycle: 'prehire' },
   { sNo: 11, sourceKey: 'nerm', lifecycle: 'active' },
-  { sNo: 12, sourceKey: 'echo', lifecycle: 'processing', existingStageKey: 'EC-9001179399093406ER' },
-  { sNo: 13, sourceKey: 'echo', lifecycle: 'futurehire', existingStageKey: 'EC-9001179399070796ER' },
-  { sNo: 14, sourceKey: 'echo', lifecycle: 'prehire', existingStageKey: 'EC-9001179399082838ER' },
-  { sNo: 15, sourceKey: 'echo', lifecycle: 'active', existingStageKey: 'EC-9001179399087961ER' },
-  { sNo: 16, sourceKey: 'ellucian', lifecycle: 'active', existingStageKey: 'ES-9001179398957407ER' },
+  { sNo: 12, sourceKey: 'echo', lifecycle: 'processing' },
+  { sNo: 13, sourceKey: 'echo', lifecycle: 'futurehire' },
+  { sNo: 14, sourceKey: 'echo', lifecycle: 'prehire' },
+  { sNo: 15, sourceKey: 'echo', lifecycle: 'active' },
+  { sNo: 16, sourceKey: 'ellucian', lifecycle: 'active' },
 ];
+
+// Which rows `npm run batch:document` covers.
+//
+// RUSH (4-7) and NERM (8-11) only, decided 2026-11-06. A teammate had
+// separately created AND documented Copley, ECHO and Ellucian identities of
+// her own ("NO need to be documented as she already did it"), so those rows
+// are finished — by her identities, not the ones this batch created.
+//
+// Those duplicates are real and still exist: the batch's own
+// create-batch-identities run made all 16, so Copley/ECHO/Ellucian each
+// have two identities now — the batch's (in temp/batch_manifest.json) and
+// the teammate's (below). Only RUSH and NERM are single-sourced, because
+// her table left them blank, which is why they are the rows still needing
+// work. What to do with the 8 unused duplicates is deliberately deferred
+// (user: "Decide later") — they are untouched, not cleaned up.
+//
+// Her Stage_Keys are recorded purely as context for that future cleanup
+// decision. Nothing reads them: they are NOT in the manifest and are NOT
+// documented by this pipeline.
+export const DOCUMENTED_BY_TEAMMATE: Record<number, string> = {
+  1: 'CL-9001179398934928ER',
+  2: 'CL-9001179398944842ER',
+  3: 'CL-9001179398951409ER',
+  12: 'EC-9001179399093406ER',
+  13: 'EC-9001179399070796ER',
+  14: 'EC-9001179399082838ER',
+  15: 'EC-9001179399087961ER',
+  16: 'ES-9001179398957407ER',
+};
+
+/** S.No values this pipeline still documents — everything not covered above. */
+export const ROWS_TO_DOCUMENT = BATCH_ROWS.filter((r) => !(r.sNo in DOCUMENTED_BY_TEAMMATE));
 
 /** tests/sources/<folder>/<lifecycle>.spec.ts — folder names don't all match the source key. */
 export const SOURCE_SPEC_FOLDER: Record<SourceKey, string> = {
@@ -93,13 +106,6 @@ export interface BatchManifestEntry {
   userId: string;
   /** Every generated field was read back from My_Rush_Jobs and matched. */
   dbVerified: boolean;
-  /**
-   * This row was created outside the pipeline and adopted from its
-   * existingStageKey rather than generated here. Such rows always have
-   * dbVerified=false, because there is no generated row to compare the
-   * stored one against — absence of verification, not a failed one.
-   */
-  adopted?: boolean;
 }
 
 export interface BatchManifest {
@@ -157,11 +163,7 @@ export function resolveStageKey(sourceKey: SourceKey, lifecycle: LifecycleState,
   console.log(
     `[batch] ${SOURCES[sourceKey]} ${lifecycle}: documenting ${entry.stageKey} ` +
       `(${entry.firstName} ${entry.lastName}, S.No ${entry.sNo}) from ${BATCH_MANIFEST_PATH}` +
-      (entry.adopted
-        ? ' — adopted (created outside this pipeline, so not field-verified here)'
-        : entry.dbVerified
-          ? ''
-          : ' — WARNING: this row was not DB-verified at creation') +
+      (entry.dbVerified ? '' : ' — WARNING: this row was not DB-verified at creation') +
       `; the spec's own STAGE_KEY (${fallback}) is overridden.`
   );
   return entry.stageKey;
@@ -218,8 +220,7 @@ export function formatBatchTable(entries: BatchManifestEntry[]): string {
   ];
   for (const row of BATCH_ROWS) {
     const entry = byKey.get(`${row.sourceKey}|${row.lifecycle}`);
-    const note = !entry ? '' : entry.adopted ? '  (adopted)' : entry.dbVerified ? '' : '  (NOT DB-VERIFIED)';
-    const stageKey = entry ? entry.stageKey + note : '(not created)';
+    const stageKey = entry ? entry.stageKey + (entry.dbVerified ? '' : '  (NOT DB-VERIFIED)') : '(not created)';
     lines.push(
       `${String(row.sNo).padEnd(4)}  ${SOURCES[row.sourceKey].padEnd(28)}  ${row.lifecycle.padEnd(11)}  ${stageKey}`
     );
