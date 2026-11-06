@@ -1,12 +1,16 @@
 import { test } from '@playwright/test';
 import { runSourceLifecycle } from '../runSourceLifecycle';
 import { RUSH_SOURCE } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // RUSH Lawson — Futurehire
 // Field list and highlights from Rush_Lawson_Futurehire.pdf (RL-98100076TESTCL000PD).
 // PDF accounts list is RUSH Lawson (Disabled) + IdentityNow (Enabled) only — no SN/AD.
 //   npx playwright test tests/sources/rush-lawson/futurehire.spec.ts --headed
-const STAGE_KEY = 'RL-98100076TESTCL000PD';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('rush', 'futurehire', 'RL-98100076TESTCL000PD');
 
 const FUTUREHIRE_DETAIL_FIELDS = [
   'Email Address',

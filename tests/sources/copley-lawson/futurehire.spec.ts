@@ -1,11 +1,15 @@
 import { test } from '@playwright/test';
 import { runSourceLifecycle } from '../runSourceLifecycle';
 import { COPLEY_SOURCE } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // Copley Lawson — Futurehire
 // Field list from Copley_Futurehire.docx. Paste a Stage Key, then:
 //   npx playwright test tests/sources/copley-lawson/futurehire.spec.ts --headed
-const STAGE_KEY = 'CL-98713241TESTCL000PD';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('copley', 'futurehire', 'CL-98713241TESTCL000PD');
 
 const FUTUREHIRE_DETAIL_FIELDS = [
   'Email Address',

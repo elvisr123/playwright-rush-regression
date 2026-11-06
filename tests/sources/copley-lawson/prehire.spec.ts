@@ -1,12 +1,16 @@
 import { test } from '@playwright/test';
 import { runSourceLifecycle } from '../runSourceLifecycle';
 import { COPLEY_SOURCE } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // Copley Lawson — Prehire
 // Field list and highlights from Copley_prehire.pdf (LenaPD T Lambert).
 // Paste a Stage Key, then:
 //   npx playwright test tests/sources/copley-lawson/prehire.spec.ts --headed
-const STAGE_KEY = 'CL-9811223361STCL000PD';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('copley', 'prehire', 'CL-9811223361STCL000PD');
 
 const PREHIRE_DETAIL_FIELDS = [
   'Email Address',

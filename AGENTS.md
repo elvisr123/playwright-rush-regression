@@ -310,6 +310,58 @@ Everything above only **documents** identities that already exist in the sandbox
   - The other 9 use an intentionally invalid placeholder shape, `<PREFIX>-PENDING_STAGE_KEY` (e.g. `CL-PENDING_STAGE_KEY`), instead of a fake-but-plausible key — this guarantees a scenario run before its real data exists fails loudly at the sandbox search step (identity not found) rather than silently searching for a key that merely looks real. Replace each placeholder with the real Stage_Key once that identity is created via `create-and-insert-identity.spec.ts` and aggregated into SailPoint.
   - Verified offline only: `npx tsc --noEmit` clean. **Not yet live-tested** — `Rush_and_Eco_6`'s corrected keys haven't been re-run against the sandbox yet, and the 9 placeholders can't be until their identities exist.
 
+## Batch pipeline — 16 identities, sandbox-only evidence (2026-11-06, user-requested)
+
+The user supplied a 16-row table (S.No / Source / StageKey) and asked to "Make all of these users and screenshot only the sandbox details for screenshot evidence automation. Dont screenshot sql management." The rows live in **`tests/config/batch.ts`** as `BATCH_ROWS`, verbatim: Copley futurehire/prehire/active; RUSH Lawson processing/futurehire/prehire/active; Non-Employee Workforce processing/futurehire/prehire/active; ECHO processing/futurehire/prehire/active; Ellucian active.
+
+**Three phases, two commands and one manual step:**
+
+```
+npm run batch:create      # phase 1 — create all 16, write temp/batch_manifest.json
+  ...aggregate the 5 sources once each in the sandbox UI (manual, you)...
+npm run batch:document    # phase 3 — sandbox screenshots + Word report per identity
+```
+
+- **Each row is its own identity** — 16 rows, 16 Stage_Keys, 16 names, 16 numbers. That reading comes from the table having a Stage_Key column per row: one identity *transitioning* futurehire → prehire → active would keep a single Stage_Key, so distinct keys mean distinct rows. It also matches the 2026-10-27 series, where the lifecycle-transition users were created separately per lifecycle rather than advanced in place.
+- **No lifecycle date overrides.** The request named no dates, so every row uses its lifecycle's own defaults from `lifecycle_dates()` (futurehire start +35d, prehire +14d, active/processing −1d, all End_Date +180d). Same reasoning as the 2026-10-29 series, which explicitly reset the previous series' `START_DATE`/`END_DATE` rather than inheriting them.
+- **Copley has no `processing` row** because the user's table has none — and there is no `tests/sources/copley-lawson/processing.spec.ts` to document one with. Every other row has a matching source spec. (Side note: `tests/config/lifecycles.ts`'s comment claiming "No `tests/sources/*/processing.spec.ts` exists yet" is stale — five of them do.)
+
+### Phase 1 — `tests/sql/create-batch-identities.spec.ts`
+
+Loops the 16 rows: `runGenerator([source], lifecycle)` → the same three live-DB duplicate checks the single-identity spec runs (name, Stage_Key, User_ID) → INSERT → read back and compare every generated field with `evaluateCheck`.
+
+- **The INSERT no longer goes through SSMS.** New `runGeneratedInsert()` in `dbClient.ts` runs the generator's own `insertSql` over the existing mssql connection. The SendKeys/`ssms-capture.ps1` route existed *to produce the screenshot* — with sandbox-only evidence requested, driving a GUI buys nothing, and 16 multi-minute clipboard-paste sessions were the most fragile part of the old pipeline (see the long corruption history above). Consequence: this spec needs no SSMS and is **not Windows-only** — it skips on DB config being absent rather than on platform.
+- **No creation Word report.** That report's content was the two SSMS screenshots plus the attribute table, so it would be empty of evidence by this request's own terms. The attribute-level DB verification still runs; it lands in the console and the manifest's `dbVerified` flag instead of a `.docx`.
+- **Collision retry, not failure.** Up to 6 regeneration attempts per row. Necessary rather than defensive: rush/copley `User_ID`s are a 4-digit prefix plus 2 random digits — 100 possible values per source across the project's whole history — and this batch wants 4 rush and 3 copley rows on top of everything since 2026-10-23. Because each row is INSERTed before the next is generated, the live-DB checks also catch collisions *within* the batch.
+- **Fails at the end, not mid-loop**, so one bad row still leaves the other 15 created and documentable. The manifest is rewritten after **every** row — these are real rows in a shared table the moment they are INSERTed, and a crash on row 12 must not lose the Stage_Keys of rows 1–11, without which there is no way to document or clean up what was created short of hunting `My_Rush_Jobs` by date.
+- **Resumable**: rows already in the manifest are skipped, so an interrupted batch continues rather than duplicating. Deleting the manifest restarts the whole batch and *would* duplicate the 16 — rename it instead if the goal is just to put the per-source specs back on their hardcoded Stage_Keys.
+- **`canInsert()` pre-flight** probes INSERT permission inside a rolled-back transaction before anything is generated, so a read-only account fails in seconds instead of 15 rows in. Deliberately **three-way** (`granted`/`denied`/`inconclusive`): the probe inserts `Stage_Key` only, so a NOT NULL column with no default would fail it while permissions are fine. Only a recognized permission error (SQL Server 229/262) blocks the batch; anything else logs and proceeds, where a real permission problem costs exactly one row.
+
+### Phase 3 — the existing per-source specs, via the manifest
+
+`resolveStageKey(sourceKey, lifecycle, fallback)` in `tests/config/batch.ts` prefers the manifest entry and falls back to the spec's own hardcoded `STAGE_KEY`. All 16 target specs now call it instead of assigning a literal.
+
+**Reusing the existing specs rather than writing a batch documentation spec is the point** — each already carries its own curated detail/account field lists and `expectedValues` for that exact source+lifecycle, which a generically-built `TestCase` would throw away. Nothing else about them changed, so they still produce the same sandbox walkthrough (Account Search → Process Identity → Details → Roles/Entitlements → Accounts → per-source Account Detail) and the same per-source SharePoint upload.
+
+- The override **logs** every time (`[batch] <source> <lifecycle>: documenting <key> ... the spec's own STAGE_KEY (<old>) is overridden`), including a warning when that row was not DB-verified at creation. Pointing a spec at a different identity than the constant at the top of the file says is too surprising to do silently.
+- With no manifest present, every spec resolves to its literal and behaves exactly as before — verified offline (0 `[batch]` lines, 39 tests still listed).
+- **`npm run batch:document` names the 16 spec files explicitly** rather than running `tests/sources/`, which is 39 tests — the rest are termed/inactive/rehire/workday specs pointing at older identities that this batch has nothing to do with. Confirmed via `--list`: exactly the 16 plus the required `[setup]` auth project.
+- `temp/` is gitignored, so the manifest does **not** travel between the Mac and the VDI. That is correct — only the VDI can create these identities, and both phases run in the same checkout there.
+
+### Managers
+
+Copley's 16-row rows get the user-supplied manager (`jyates` / `019811`, one-up `982564`); the other four sources still carry the 2026-10-29 test manager (`MaeveAA Yamamoto` / `259921`, one-up `FionaAA Lambert` / `253476`) because **the user said they would supply the other sources' manager details later**. When they do, update `source_templates.py` and re-run — already-created identities do not pick up template changes.
+
+### Verified offline / still unverified
+
+Verified from the Mac: all 16 (source, lifecycle) combinations build correct rows through the pure `build_my_rush_jobs_row` path — right Stage_Key prefix (CL/RL/NE/EC/ES), right `User_ID` prefix (0002/0001/003/004/005), right lifecycle dates and Status/IIQDisabled, `processing` → `Primary_Position=NO`, and Copley alone on the new manager. `resolveStageKey` was exercised with a synthetic 16-entry manifest (all 16 overrode, including the empty `nerm/futurehire` fallback and the not-DB-verified warning) and with no manifest (clean fallback). `npx tsc --noEmit` clean; both specs route to their expected projects via `--list`.
+
+Deliberately **not** run from the Mac: the generator itself, because `generate_identity.py` writes to `My_Rush_Jobs.sqlite` and the **git-tracked** `Copley_test_identities.xlsx` on every call — 16 throwaway generations would dirty tracked files and burn 16 names out of the dedupe pool. The pure-function sweep above covers the same ground without that side effect.
+
+**Nothing is live-tested.** No identity has been created, `runGeneratedInsert`/`canInsert` have never run against the real database (the DB account's INSERT permission is unknown — the single biggest open risk, and exactly what the pre-flight reports), and no phase-3 screenshot has been captured.
+
+- **Pre-existing oddity, left alone**: `tests/sources/echo/active.spec.ts`'s hardcoded fallback Stage_Key is `RL-98100122712TESTCL000PD` — an `RL-` (RUSH Lawson) key in an ECHO spec, identical to `rush-lawson/active.spec.ts`'s. Either that identity genuinely has both accounts, or it is a copy-paste leftover and the ECHO spec has been documenting a RUSH account. The batch manifest overrides it either way, so it does not affect this run; worth checking before relying on that spec outside a batch.
+
 ## Project layout notes
 
 - Multiple local copies of this project exist on this machine at different

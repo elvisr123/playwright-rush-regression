@@ -6,11 +6,15 @@ import {
   ECHO_SERVICENOW_ACCOUNT_FIELDS,
   ECHO_AD_ACCOUNT_FIELDS,
 } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // ECHO Credentialed Providers — Prehire
 // From Echo Credentialed_Provider_Prehire.docx (EC-0981298TESTEC334PG).
 //   npx playwright test tests/sources/echo/prehire.spec.ts --headed
-const STAGE_KEY = 'EC-0981298TESTEC334PG';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('echo', 'prehire', 'EC-0981298TESTEC334PG');
 
 const PREHIRE_DETAIL_FIELDS = [
   'Email Address',

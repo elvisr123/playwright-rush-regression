@@ -6,11 +6,15 @@ import {
   ECHO_SERVICENOW_ACCOUNT_FIELDS,
   ECHO_AD_ACCOUNT_FIELDS,
 } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // ECHO Credentialed Providers — Active
 // From Echo_credentialed_Prvoiders_Active.docx (RL-98100122712TESTCL000PD).
 //   npx playwright test tests/sources/echo/active.spec.ts --headed
-const STAGE_KEY = 'RL-98100122712TESTCL000PD';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('echo', 'active', 'RL-98100122712TESTCL000PD');
 
 const ACTIVE_DETAIL_FIELDS = [
   'Email Address',

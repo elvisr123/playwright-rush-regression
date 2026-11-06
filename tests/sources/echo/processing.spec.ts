@@ -4,11 +4,15 @@ import {
   ECHO_SOURCE,
   ECHO_IDENTITYNOW_ACCOUNT_FIELDS,
 } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // ECHO Credentialed Providers — Processing
 // From Echo_Credentialed Providers_Proccessing.docx (EC-0982112TESTEC334PD).
 //   npx playwright test tests/sources/echo/processing.spec.ts --headed
-const STAGE_KEY = 'EC-0982112TESTEC334PD';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('echo', 'processing', 'EC-0982112TESTEC334PD');
 
 const PROCESSING_DETAIL_FIELDS = [
   'Email Address',

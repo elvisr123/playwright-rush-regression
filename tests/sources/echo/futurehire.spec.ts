@@ -4,11 +4,15 @@ import {
   ECHO_SOURCE,
   ECHO_IDENTITYNOW_ACCOUNT_FIELDS,
 } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // ECHO Credentialed Providers — Futurehire
 // From Echo Credentialed_Provider_Futurehire.docx (EC-0098122TESTEC00000PD).
 //   npx playwright test tests/sources/echo/futurehire.spec.ts --headed
-const STAGE_KEY = 'EC-0098122TESTEC00000PD';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('echo', 'futurehire', 'EC-0098122TESTEC00000PD');
 
 const FUTUREHIRE_DETAIL_FIELDS = [
   'Email Address',

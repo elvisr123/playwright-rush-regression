@@ -196,3 +196,128 @@ export async function findRowsByUserId(table: string, userId: string): Promise<R
     await pool.close().catch(() => {});
   }
 }
+
+/**
+ * Runs one generated INSERT statement against My_Rush_Jobs and returns the
+ * number of rows affected.
+ *
+ * Why this exists alongside scripts/ssms-capture.ps1: the original creation
+ * pipeline INSERTed by typing SQL into a live SSMS window via SendKeys,
+ * because the point was to *screenshot* SSMS doing it for the Word report.
+ * The 2026-11-06 batch request asked for sandbox-only screenshot evidence
+ * ("Dont screenshot sql management"), which removes that reason — and with
+ * it the reason to tolerate SendKeys for 16 rows, where each row is its own
+ * multi-minute typing session that can be derailed by focus loss, a popup,
+ * or the window being touched. This runs the identical generated SQL over
+ * the same mssql connection the verification SELECTs already use.
+ *
+ * The statement is NOT parameterized: it comes from
+ * identity-factory/local_table.py's to_insert_sql(), which emits its own
+ * escaped literals (single quotes doubled) for a row this repo generated
+ * itself. Nothing here is user- or network-supplied, so the shape checks
+ * below are a guard against a malformed/unexpected statement rather than
+ * against injection — they refuse anything that isn't exactly one INSERT
+ * into the expected table.
+ */
+export async function runGeneratedInsert(table: string, insertSql: string): Promise<number> {
+  if (!KNOWN_TABLES.has(table)) {
+    throw new Error(`Refusing to write to unrecognized table "${table}" — add it to KNOWN_TABLES in dbClient.ts once confirmed in SSMS.`);
+  }
+  const trimmed = insertSql.trim();
+  const expectedPrefix = `INSERT INTO [SOA].[dbo].[${table}]`;
+  if (!trimmed.toUpperCase().startsWith(expectedPrefix.toUpperCase())) {
+    throw new Error(
+      `Refusing to run a statement that doesn't start with "${expectedPrefix}" — got: ${trimmed.slice(0, 120)}...`
+    );
+  }
+  // One statement only. to_insert_sql() ends with a single ';' and puts its
+  // column names in /* ... */ block comments, so any ';' before the final
+  // character would mean the generator changed shape or something else was
+  // concatenated on.
+  const withoutTrailing = trimmed.endsWith(';') ? trimmed.slice(0, -1) : trimmed;
+  if (withoutTrailing.includes(';')) {
+    throw new Error('Refusing to run multiple statements in one call — expected exactly one INSERT.');
+  }
+
+  const pool = new sql.ConnectionPool(config());
+  try {
+    await withTimeout(pool.connect(), HARD_TIMEOUT_MS, `Connecting to ${table}`);
+    const result = await withTimeout(
+      pool.request().query(trimmed),
+      HARD_TIMEOUT_MS,
+      `INSERT into ${table}`
+    );
+    // mssql reports per-statement counts; one INSERT means one entry.
+    const affected = result.rowsAffected?.reduce((a, b) => a + b, 0) ?? 0;
+    return affected;
+  } finally {
+    await pool.close().catch(() => {});
+  }
+}
+
+// SQL Server's permission-denied errors for a write. 229 is the usual
+// "The INSERT permission was denied on object ..."; 262 is the
+// "permission denied in database" variant. Used to tell a genuinely
+// read-only account apart from a probe that failed for some other reason.
+const PERMISSION_DENIED_ERROR_NUMBERS = new Set([229, 262]);
+
+export type InsertProbeVerdict = 'granted' | 'denied' | 'inconclusive';
+
+/**
+ * Pre-flight for the batch creation run: tries to establish whether the
+ * configured DB account can INSERT into the target table before any
+ * identity is generated, so a read-only account is caught in seconds
+ * rather than 15 rows into a 16-row batch.
+ *
+ * Proves write permission without leaving a row behind: the INSERT runs
+ * inside a transaction that is always rolled back.
+ *
+ * Three-way on purpose. The probe is a Stage_Key-only INSERT, leaving every
+ * other column to its own default — so if My_Rush_Jobs has (or later gains)
+ * a NOT NULL column with no default, the probe fails on the schema while
+ * the account's permissions are perfectly fine. Reporting that as 'denied'
+ * would block the whole batch over nothing, so only a recognized
+ * permission error (see above) is 'denied'; anything else is
+ * 'inconclusive' and the caller should proceed — a real permission problem
+ * then costs exactly one row's attempt instead of the batch.
+ */
+export async function canInsert(
+  table: string,
+  probeStageKey: string
+): Promise<{ verdict: InsertProbeVerdict; detail: string }> {
+  if (!KNOWN_TABLES.has(table)) {
+    throw new Error(`Refusing to write to unrecognized table "${table}" — add it to KNOWN_TABLES in dbClient.ts once confirmed in SSMS.`);
+  }
+  const pool = new sql.ConnectionPool(config());
+  try {
+    await withTimeout(pool.connect(), HARD_TIMEOUT_MS, `Connecting to ${table}`);
+    const tx = new sql.Transaction(pool);
+    await withTimeout(tx.begin(), HARD_TIMEOUT_MS, 'Beginning probe transaction');
+    try {
+      await withTimeout(
+        new sql.Request(tx)
+          .input('stageKey', sql.VarChar, probeStageKey)
+          .query(`INSERT INTO dbo.${table} (Stage_Key) VALUES (@stageKey)`),
+        HARD_TIMEOUT_MS,
+        `Probe INSERT into ${table}`
+      );
+      return { verdict: 'granted', detail: 'INSERT permission confirmed (probe row rolled back).' };
+    } finally {
+      // Always roll back — on success to discard the probe row, on failure
+      // to close out the transaction cleanly.
+      await tx.rollback().catch(() => {});
+    }
+  } catch (err) {
+    const number = (err as { number?: number }).number;
+    const message = (err as Error).message;
+    if (number !== undefined && PERMISSION_DENIED_ERROR_NUMBERS.has(number)) {
+      return { verdict: 'denied', detail: `SQL Server error ${number}: ${message}` };
+    }
+    return {
+      verdict: 'inconclusive',
+      detail: `probe did not complete${number !== undefined ? ` (SQL Server error ${number})` : ''}: ${message}`,
+    };
+  } finally {
+    await pool.close().catch(() => {});
+  }
+}

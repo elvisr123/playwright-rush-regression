@@ -1,11 +1,15 @@
 import { test } from '@playwright/test';
 import { runSourceLifecycle } from '../runSourceLifecycle';
 import { NERM_SOURCE } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // Non-Employee Workforce — Prehire
 // Field list and highlights from Non-Employee workforce_prehire.pdf (NE-19822786TEST000PDPPL).
 //   npx playwright test tests/sources/nerm/prehire.spec.ts --headed
-const STAGE_KEY = 'NE-19822786TEST000PDPPL';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('nerm', 'prehire', 'NE-19822786TEST000PDPPL');
 
 const PREHIRE_DETAIL_FIELDS = [
   'Email Address',

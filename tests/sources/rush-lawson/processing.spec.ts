@@ -1,11 +1,15 @@
 import { test } from '@playwright/test';
 import { runSourceLifecycle } from '../runSourceLifecycle';
 import { RUSH_SOURCE } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // RUSH Lawson — Processing
 // Same screenshot path as RUSH Workday processing. Primary Position is NO.
 //   npx playwright test tests/sources/rush-lawson/processing.spec.ts --headed
-const STAGE_KEY = 'RL-9512088329ER';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('rush', 'processing', 'RL-9512088329ER');
 
 const PROCESSING_DETAIL_FIELDS = [
   'Email Address',

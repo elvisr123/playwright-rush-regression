@@ -6,11 +6,15 @@ import {
   ELLUCIAN_SERVICENOW_ACCOUNT_FIELDS,
   ELLUCIAN_AD_ACCOUNT_FIELDS,
 } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // Ellucian Students — Active
 // From Ellucian_Students_Active.docx (ES-119811128TEST000PDELL).
 //   npx playwright test tests/sources/ellucian/active.spec.ts --headed
-const STAGE_KEY = 'ES-119811128TEST000PDELL';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('ellucian', 'active', 'ES-119811128TEST000PDELL');
 
 const ACTIVE_DETAIL_FIELDS = [
   'Email Address',

@@ -1,11 +1,15 @@
 import { test } from '@playwright/test';
 import { runSourceLifecycle } from '../runSourceLifecycle';
 import { NERM_SOURCE } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // Non-Employee Workforce — Active
 // Field list and highlights from Non-Employee_workforce_Active.pdf (NE-19825552TEST000PDPPL).
 //   npx playwright test tests/sources/nerm/active.spec.ts --headed
-const STAGE_KEY = 'NE-19825552TEST000PDPPL';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('nerm', 'active', 'NE-19825552TEST000PDPPL');
 
 const ACTIVE_DETAIL_FIELDS = [
   'Email Address',

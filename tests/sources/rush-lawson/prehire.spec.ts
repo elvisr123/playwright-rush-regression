@@ -1,11 +1,15 @@
 import { test } from '@playwright/test';
 import { runSourceLifecycle } from '../runSourceLifecycle';
 import { RUSH_SOURCE } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // RUSH Lawson — Prehire
 // Field list and highlights from Rush_Lawson_Prehire.pdf (RL-981000986TESTCL000PD).
 //   npx playwright test tests/sources/rush-lawson/prehire.spec.ts --headed
-const STAGE_KEY = 'RL-981000986TESTCL000PD';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('rush', 'prehire', 'RL-981000986TESTCL000PD');
 
 const PREHIRE_DETAIL_FIELDS = [
   'Email Address',

@@ -1,12 +1,16 @@
 import { test } from '@playwright/test';
 import { runSourceLifecycle } from '../runSourceLifecycle';
 import { RUSH_SOURCE } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // RUSH Lawson — Active
 // Field list and highlights from Rush_Lawson_Active.pdf (RL-98100122712TESTCL000PD).
 // Selects RUSH Lawson (not Copley) under Admin → Sources in the sandbox.
 //   npx playwright test tests/sources/rush-lawson/active.spec.ts --headed
-const STAGE_KEY = 'RL-98100122712TESTCL000PD';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('rush', 'active', 'RL-98100122712TESTCL000PD');
 
 const ACTIVE_DETAIL_FIELDS = [
   'Email Address',

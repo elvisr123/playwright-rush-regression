@@ -1,10 +1,14 @@
 import { test } from '@playwright/test';
 import { runSourceLifecycle } from '../runSourceLifecycle';
 import { COPLEY_SOURCE } from './profile';
+import { resolveStageKey } from '../../config/batch';
 
 // Copley Lawson — Active  (Copley_Lawson_003)
 //   npx playwright test tests/sources/copley-lawson/active.spec.ts --headed
-const STAGE_KEY = 'CL-95129456TESTCL560ER';
+// Stage_Key comes from temp/batch_manifest.json once the 2026-11-06
+// batch exists (tests/sql/create-batch-identities.spec.ts). The literal
+// below is the fallback used when there is no manifest entry.
+const STAGE_KEY = resolveStageKey('copley', 'active', 'CL-95129456TESTCL560ER');
 
 test('Copley Lawson — Active', async ({ page }) => {
   await runSourceLifecycle(page, COPLEY_SOURCE, 'active', STAGE_KEY, {
