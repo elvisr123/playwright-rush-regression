@@ -357,9 +357,26 @@ All 16 phase-3 reports publish to the single folder the user gave on 2026-11-06 
 - `runSourceLifecycle` now also passes `creationEvidenceEntries: undefined` explicitly — the parameter that would prepend SSMS INSERT/SELECT screenshots to the report. That is the second half of "sandbox screenshots only"; phase 1 not taking them is the first.
 - Verified offline against a partial 4-of-16 manifest: those 4 resolved to `Evidence_Nov_11_2026`, the other 12 (plus an off-batch `RUSH Lawson termed`) resolved to normal routing.
 
-### Managers
+### Managers, and repairing the ones created too early
 
-Copley's 16-row rows get the user-supplied manager (`jyates` / `019811`, one-up `982564`); the other four sources still carry the 2026-10-29 test manager (`MaeveAA Yamamoto` / `259921`, one-up `FionaAA Lambert` / `253476`) because **the user said they would supply the other sources' manager details later**. When they do, update `source_templates.py` and re-run — already-created identities do not pick up template changes.
+The user supplied manager details in two waves on 2026-11-06 — copley first, then rush and nerm **after the batch had already run**. For every source they named, they gave only an employee ID, a username and a one-up ID, so the same two choices apply throughout: `Manager_Name` mirrors the username and `OneUp_Manager_Network_ID` carries the one-up's digits.
+
+| source | manager | one-up | state |
+|---|---|---|---|
+| copley | `jyates` / `019811` | `982564` | set before the batch ran — its 3 rows are correct |
+| rush | `kbarr` / `981715` | `981453` | set **after** — its 4 rows were created with the old manager |
+| nerm | `mparris1` / `1933000635` | `19234400` | set **after** — its 4 rows were created with the old manager |
+| echo, ellucian | `MaeveAA Yamamoto` / `259921` | `FionaAA Lambert` / `253476` | unchanged; user confirmed leaving them |
+
+`rush`'s network ID changed **shape**: its original real row carried a username (`KPIERRE`) where copley carried digits, and matching that would need `981453`'s username, which was not supplied. Digits is the only option and now agrees across all three. `nerm`'s `Manager_Employee_ID` is 10 digits where copley/rush are 6 — the user's value as given, not normalized.
+
+**Template edits do not retrofit existing rows.** Each row is a literal snapshot of its template at generation time, so the 8 rush/nerm identities kept the old manager. The user chose repair-in-place (precedent: the 2026-10-26 run-1 repair) over leaving them or recreating, so their Stage_Keys, names and User_IDs all stay valid.
+
+- **`npm run batch:repair-managers`** (`tests/sql/repair-batch-managers.spec.ts`) compares every manifest row's five manager columns against its source template's *current* values and UPDATEs only those that differ, verifying each by reading the row back rather than trusting `rowsAffected`.
+- **Scope comes from the data, not a hardcoded source list.** Rows that already agree are left alone and counted, so it naturally hits exactly the rows that drifted — verified offline against a simulation of what the batch wrote: 8 repairs (rush 4, nerm 4), copley and echo/ellucian clean. It stays correct if a different source's manager is edited later.
+- **`readSourceTemplates()`** (`generatorClient.ts` → new `identity-factory/dump_templates.py`) is how the TS side gets the template values, so no manager value is restated in TypeScript where it could drift. `dump_templates.py` allocates nothing — no name consumed, no row written — unlike `generate_identity.py`.
+- **`updateRowFields()`** in `dbClient.ts` binds values as parameters and checks column names against a five-entry `UPDATABLE_COLUMNS` allowlist, so neither side of the assignment can carry arbitrary SQL. It throws unless exactly one row was affected.
+- **The UPDATE fixes the staging table only.** SailPoint still holds the old manager until those sources are re-aggregated, and the reports already in `Evidence_Nov_11_2026` were captured against the old values — so re-aggregate rush + nerm and re-run `npm run batch:document`. The spec prints both steps.
 
 ### Verified offline / still unverified
 

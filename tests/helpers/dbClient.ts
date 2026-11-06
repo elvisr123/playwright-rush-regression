@@ -321,3 +321,74 @@ export async function canInsert(
     await pool.close().catch(() => {});
   }
 }
+
+// Columns updateRowFields is allowed to write. Deliberately only the five
+// manager columns: the one repair this pipeline needs is re-pointing an
+// already-created identity's manager after a template change, and a
+// narrow allowlist means a typo'd field name is a thrown error rather than
+// a silent write to the wrong column. Widen it only with a real reason.
+const UPDATABLE_COLUMNS = new Set([
+  'Manager_Name',
+  'Manager_Username',
+  'Manager_Employee_ID',
+  'OneUp_Manager_Employee_ID',
+  'OneUp_Manager_Network_ID',
+]);
+
+/**
+ * Updates specific columns on exactly one staging row, matched by Stage_Key.
+ *
+ * Values are bound as parameters; column names are checked against
+ * UPDATABLE_COLUMNS above before being interpolated, so neither side of the
+ * assignment can carry arbitrary SQL.
+ *
+ * Throws unless exactly one row was affected. 0 means the Stage_Key isn't
+ * there (wrong key, wrong environment, or the row was never INSERTed) and
+ * >1 should be impossible for a Stage_Key — either way the caller is
+ * operating on a different table than it thinks, which is worth stopping
+ * for rather than reporting as success.
+ */
+export async function updateRowFields(
+  table: string,
+  stageKey: string,
+  fields: Record<string, string | null>
+): Promise<number> {
+  if (!KNOWN_TABLES.has(table)) {
+    throw new Error(`Refusing to write to unrecognized table "${table}" — add it to KNOWN_TABLES in dbClient.ts once confirmed in SSMS.`);
+  }
+  const names = Object.keys(fields);
+  if (names.length === 0) throw new Error('updateRowFields called with no fields.');
+  const bad = names.filter((n) => !UPDATABLE_COLUMNS.has(n));
+  if (bad.length > 0) {
+    throw new Error(
+      `Refusing to update column(s) not in UPDATABLE_COLUMNS: ${bad.join(', ')}. ` +
+        `Allowed: ${[...UPDATABLE_COLUMNS].join(', ')}.`
+    );
+  }
+
+  const pool = new sql.ConnectionPool(config());
+  try {
+    await withTimeout(pool.connect(), HARD_TIMEOUT_MS, `Connecting to ${table}`);
+    const request = pool.request().input('stageKey', sql.VarChar, stageKey);
+    const assignments = names.map((name, i) => {
+      const param = `v${i}`;
+      const value = fields[name];
+      request.input(param, sql.VarChar, value === null ? null : String(value));
+      return `[${name}] = @${param}`;
+    });
+    const result = await withTimeout(
+      request.query(`UPDATE dbo.${table} SET ${assignments.join(', ')} WHERE Stage_Key = @stageKey`),
+      HARD_TIMEOUT_MS,
+      `UPDATE ${table}`
+    );
+    const affected = result.rowsAffected?.reduce((a, b) => a + b, 0) ?? 0;
+    if (affected !== 1) {
+      throw new Error(
+        `Expected to update exactly 1 row for Stage_Key "${stageKey}" in ${table}, but ${affected} were affected.`
+      );
+    }
+    return affected;
+  } finally {
+    await pool.close().catch(() => {});
+  }
+}

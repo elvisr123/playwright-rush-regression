@@ -146,3 +146,39 @@ export function runGenerator(
   }
   return JSON.parse(jsonLine) as GeneratedIdentity;
 }
+
+/** The five My_Rush_Jobs columns that make up a row's manager. */
+export const MANAGER_COLUMNS = [
+  'Manager_Name',
+  'Manager_Username',
+  'Manager_Employee_ID',
+  'OneUp_Manager_Employee_ID',
+  'OneUp_Manager_Network_ID',
+] as const;
+
+/**
+ * Reads identity-factory/source_templates.py's SOURCE_TEMPLATES via
+ * dump_templates.py.
+ *
+ * Lets callers compare an existing row against what its source template
+ * says *today* without restating any template value in TypeScript — which
+ * matters for the manager columns, since those are now edited per source on
+ * the user's instruction and a second hardcoded copy would silently drift.
+ *
+ * Unlike runGenerator this allocates nothing: no name is consumed, no row
+ * is written to the SQLite mirror or the Excel audit log.
+ */
+export function readSourceTemplates(): Record<string, Record<string, string | null>> {
+  const script = path.resolve('identity-factory', 'dump_templates.py');
+  const [pythonCmd, ...pythonPrefixArgs] = resolvePython();
+  const stdout = execFileSync(pythonCmd, [...pythonPrefixArgs, script], { encoding: 'utf8', timeout: 60_000 });
+  const lines = stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const jsonLine = lines[lines.length - 1];
+  if (!jsonLine) {
+    throw new Error('dump_templates.py produced no output.');
+  }
+  return JSON.parse(jsonLine) as Record<string, Record<string, string | null>>;
+}
