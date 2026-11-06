@@ -405,6 +405,18 @@ Deliberately **not** run from the Mac: the generator itself, because `generate_i
 
 - **Pre-existing oddity, left alone**: `tests/sources/echo/active.spec.ts`'s hardcoded fallback Stage_Key is `RL-98100122712TESTCL000PD` — an `RL-` (RUSH Lawson) key in an ECHO spec, identical to `rush-lawson/active.spec.ts`'s. Either that identity genuinely has both accounts, or it is a copy-paste leftover and the ECHO spec has been documenting a RUSH account. The batch manifest overrides it either way, so it does not affect this run; worth checking before relying on that spec outside a batch.
 
+## Login / MFA
+
+`tests/auth.setup.ts` reuses `playwright/.auth/user.json` for **60 minutes** and re-logs in after that. If the re-login hits an Okta MFA challenge, a headless run cannot clear it — nobody can approve a push or type a code — so the `waitForURL` burns its full 120s and the `setup` project fails, taking every dependent spec with it ("8 did not run"). Hit live on 2026-11-06 during `batch:document`.
+
+Fix, and the one-time step per hour:
+
+```
+npx playwright test tests/auth.setup.ts --project=setup --headed
+```
+
+Approve the prompt, then re-run the real command. The setup now detects an MFA/verify/challenge URL on timeout and throws that instruction instead of a bare navigation timeout.
+
 ## Project layout notes
 
 - Multiple local copies of this project exist on this machine at different
