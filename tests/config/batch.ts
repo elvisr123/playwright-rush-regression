@@ -137,6 +137,48 @@ export function resolveStageKey(sourceKey: SourceKey, lifecycle: LifecycleState,
   return entry.stageKey;
 }
 
+// Where every report from this batch is published — given by the user on
+// 2026-11-06, decoding to:
+//   /sites/AsbRushISC/Shared Documents/ASB/Rush_TestCases/
+//     Enhancement_Nov_11_2026/Evidence_Nov_11_2026
+//
+// This is a DIFFERENT folder from aggregate-and-document.spec.ts's
+// Enhancement_Nov_2026/Evidence_Nov/Lifecycle_Transition_Time — note
+// Nov_11_2026, not Nov_2026 — so don't collapse the two.
+//
+// Only the `id` query param is read (sharepointUpload.ts does
+// searchParams.get('id') and decodes it to the server-relative path), so
+// the Teams-added p/ct/or/ga/LOF params from the user's copied link are
+// dropped here rather than carried along as noise.
+export const BATCH_EVIDENCE_FOLDER_URL =
+  'https://netorgft1314491.sharepoint.com/sites/AsbRushISC/Shared%20Documents/Forms/AllItems.aspx' +
+  '?id=%2Fsites%2FAsbRushISC%2FShared%20Documents%2FASB%2FRush%5FTestCases' +
+  '%2FEnhancement%5FNov%5F11%5F2026%2FEvidence%5FNov%5F11%5F2026';
+
+/**
+ * SharePoint folder a given run's report should be published to.
+ *
+ * Returns the batch evidence folder for any source+lifecycle that is part
+ * of the created batch, and `undefined` otherwise — `undefined` means
+ * "upload normally", i.e. uploadReportForSource's per-source subfolder
+ * routing (Copley / Rush / NERM_testcases under the default team folder).
+ *
+ * Gated on the manifest for the same reason resolveStageKey is: outside a
+ * batch run these specs must behave exactly as they did before, and
+ * silently redirecting an ordinary one-off run's report into the batch
+ * folder would be wrong.
+ *
+ * Matched on sourceName rather than sourceKey because that is what
+ * runSourceLifecycle has in hand; manifest entries carry both.
+ */
+export function resolveUploadFolderUrl(sourceName: string, lifecycle: LifecycleState): string | undefined {
+  const manifest = readBatchManifest();
+  const entry = manifest?.entries.find((e) => e.sourceName === sourceName && e.lifecycle === lifecycle);
+  if (!entry) return undefined;
+  console.log(`[batch] ${sourceName} ${lifecycle}: report → Evidence_Nov_11_2026 (batch evidence folder).`);
+  return BATCH_EVIDENCE_FOLDER_URL;
+}
+
 /** The user's table, re-printed with whatever Stage_Keys are known so far. */
 export function formatBatchTable(entries: BatchManifestEntry[]): string {
   const byKey = new Map(entries.map((e) => [`${e.sourceKey}|${e.lifecycle}`, e]));

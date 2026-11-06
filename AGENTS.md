@@ -348,6 +348,15 @@ Loops the 16 rows: `runGenerator([source], lifecycle)` → the same three live-D
 - **`npm run batch:document` names the 16 spec files explicitly** rather than running `tests/sources/`, which is 39 tests — the rest are termed/inactive/rehire/workday specs pointing at older identities that this batch has nothing to do with. Confirmed via `--list`: exactly the 16 plus the required `[setup]` auth project.
 - `temp/` is gitignored, so the manifest does **not** travel between the Mac and the VDI. That is correct — only the VDI can create these identities, and both phases run in the same checkout there.
 
+### Where the reports go
+
+All 16 phase-3 reports publish to the single folder the user gave on 2026-11-06 — `BATCH_EVIDENCE_FOLDER_URL` in `tests/config/batch.ts`, decoding to `/sites/AsbRushISC/Shared Documents/ASB/Rush_TestCases/Enhancement_Nov_11_2026/Evidence_Nov_11_2026`. Note **`Enhancement_Nov_11_2026` / `Evidence_Nov_11_2026`**, which is a different folder from `aggregate-and-document.spec.ts`'s `Enhancement_Nov_2026/Evidence_Nov/Lifecycle_Transition_Time` — the names are close enough to merge by accident, so don't.
+
+- Only the `id` query param is kept. `sharepointUpload.ts` does `searchParams.get('id')` and decodes it to the server-relative path, so the `p`/`ct`/`or`/`ga`/`LOF` params Teams adds to a copied link are dropped rather than carried as noise.
+- Routed through **`resolveUploadFolderUrl(sourceName, lifecycle)`**, called once in `runSourceLifecycle` rather than per-spec, so all 16 specs pick it up with no further edit each. It returns the batch folder only for source+lifecycle pairs present in the manifest and `undefined` otherwise — and `undefined` means `uploadReportForSource`'s normal per-source subfolder routing (Copley / Rush / NERM_testcases under the default team folder). Gated on the manifest for the same reason `resolveStageKey` is: redirecting an ordinary one-off run's report into the batch folder would be wrong.
+- `runSourceLifecycle` now also passes `creationEvidenceEntries: undefined` explicitly — the parameter that would prepend SSMS INSERT/SELECT screenshots to the report. That is the second half of "sandbox screenshots only"; phase 1 not taking them is the first.
+- Verified offline against a partial 4-of-16 manifest: those 4 resolved to `Evidence_Nov_11_2026`, the other 12 (plus an off-batch `RUSH Lawson termed`) resolved to normal routing.
+
 ### Managers
 
 Copley's 16-row rows get the user-supplied manager (`jyates` / `019811`, one-up `982564`); the other four sources still carry the 2026-10-29 test manager (`MaeveAA Yamamoto` / `259921`, one-up `FionaAA Lambert` / `253476`) because **the user said they would supply the other sources' manager details later**. When they do, update `source_templates.py` and re-run — already-created identities do not pick up template changes.
