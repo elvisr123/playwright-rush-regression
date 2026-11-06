@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { uploadFileToSharePointFolder, removeLocalReportCopy } from '../helpers/sharepointUpload';
-import { BATCH_EVIDENCE_FOLDER_URL } from '../config/batch';
+import { BATCH_EVIDENCE_FOLDER_URL, BATCH_MANIFEST_PATH, ROWS_TO_DOCUMENT, readBatchManifest } from '../config/batch';
 
 // Uploads report .docx files already sitting in temp/ to the batch evidence
 // folder, one at a time.
@@ -27,27 +27,85 @@ import { BATCH_EVIDENCE_FOLDER_URL } from '../config/batch';
 // SERIAL BY CONSTRUCTION, and that is the point: a for-loop over one
 // browser profile, never parallel. Do not "optimize" this into parallel
 // uploads — that is precisely the bug it exists to recover from.
+// ONLY files belonging to an identity this batch documents are uploaded.
+//
+// The first version of this spec globbed every .docx in temp/ and started
+// pushing 25 stale September/October reports into Evidence_Nov_11_2026
+// before it was interrupted — two landed there and had their local copies
+// deleted. temp/ is a long-lived scratch directory full of reports whose
+// uploads failed or were never attempted, going back months; "every .docx
+// in temp/" is emphatically not "the reports from this run".
+//
+// Matching is by identity name against the batch manifest, because that is
+// the only thing tying a report file to a batch row: buildReportFileName
+// turns the on-screen display name into
+// "<Given><SourceSuffix>_[<MiddleInitial>_]<Family>_<date>_<time>.docx"
+// (e.g. "CoraRush_W_Williams_2026-11-06_13-29-01.docx" for Cora Williams —
+// note the source suffix glued onto the given name, and the optional
+// middle initial). So the first token must START WITH the manifest's
+// firstName rather than equal it, and the last token must equal lastName.
 const REPORT_DIR = 'temp';
+
+const REPORT_NAME = /^(.+)_(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})\.docx$/i;
+
+/** The manifest entry this report belongs to, or undefined if it isn't ours. */
+function matchEntry(fileName: string, entries: { firstName: string; lastName: string; sNo: number }[]) {
+  const m = REPORT_NAME.exec(fileName);
+  if (!m) return undefined;
+  const tokens = m[1].split('_').filter(Boolean);
+  if (tokens.length < 2) return undefined;
+  const first = tokens[0];
+  const last = tokens[tokens.length - 1];
+  return entries.find(
+    (e) =>
+      e.firstName &&
+      e.lastName &&
+      first.toLowerCase().startsWith(e.firstName.toLowerCase()) &&
+      last.toLowerCase() === e.lastName.toLowerCase()
+  );
+}
 
 test('Upload any report .docx left in temp/ to the batch evidence folder', async () => {
   // Each upload spawns its own Chrome, may need an SSO round-trip, and
   // there can be a dozen files.
   test.setTimeout(1_800_000);
 
+  const manifest = readBatchManifest();
+  test.skip(!manifest || manifest.entries.length === 0, `No ${BATCH_MANIFEST_PATH} — nothing to match reports against.`);
+
+  // Restricted to the rows this pipeline documents, so a report for a row a
+  // teammate handled is never re-uploaded from here either.
+  const documentedSNos = new Set(ROWS_TO_DOCUMENT.map((r) => r.sNo));
+  const entries = manifest!.entries.filter((e) => documentedSNos.has(e.sNo));
+
   const dir = path.resolve(REPORT_DIR);
-  const files = fs.existsSync(dir)
-    ? fs
-        .readdirSync(dir)
-        .filter((f) => f.toLowerCase().endsWith('.docx'))
-        // Oldest first, so an interrupted run resumes in a predictable
-        // order rather than by whatever the filesystem returns.
-        .sort((a, b) => fs.statSync(path.join(dir, a)).mtimeMs - fs.statSync(path.join(dir, b)).mtimeMs)
-    : [];
+  const allDocx = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.docx')) : [];
+  const files = allDocx
+    .filter((f) => matchEntry(f, entries))
+    // Oldest first, so an interrupted run resumes in a predictable order
+    // rather than by whatever the filesystem returns.
+    .sort((a, b) => fs.statSync(path.join(dir, a)).mtimeMs - fs.statSync(path.join(dir, b)).mtimeMs);
 
-  test.skip(files.length === 0, `No .docx files in ${REPORT_DIR}/ — nothing to upload.`);
+  const skipped = allDocx.filter((f) => !matchEntry(f, entries));
+  if (skipped.length > 0) {
+    console.log(
+      `Ignoring ${skipped.length} .docx in ${REPORT_DIR}/ that do not belong to a documented batch identity ` +
+        `(old runs, creation reports, other people's work):`
+    );
+    for (const f of skipped) console.log(`  - ${f}`);
+    console.log('');
+  }
 
-  console.log(`Found ${files.length} report(s) in ${REPORT_DIR}/:`);
-  for (const f of files) console.log(`  ${f}`);
+  test.skip(
+    files.length === 0,
+    `No report in ${REPORT_DIR}/ matches a documented batch identity — nothing to upload.`
+  );
+
+  console.log(`Uploading ${files.length} report(s) for documented batch identities:`);
+  for (const f of files) {
+    const e = matchEntry(f, entries)!;
+    console.log(`  ${f}  (S.No ${e.sNo})`);
+  }
   console.log('');
 
   const failures: string[] = [];
