@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { execFileSync } from 'child_process';
 import * as fs from 'fs';
+import { runSsmsCapture, verificationSelect, VDI_AUTOMATION_EVIDENCE_FOLDER_URL } from '../helpers/ssmsCapture';
 import * as path from 'path';
 import { runGenerator } from '../helpers/generatorClient';
 import { getStagingRow, findRowsByName, findRowsByUserId } from '../helpers/dbClient';
@@ -173,42 +173,6 @@ const ONEUP_MANAGER_EMPLOYEE_ID: string | undefined = undefined;
 // sandbox UI instead. Applies to the whole run-1/2/3 series, so leave
 // this false when flipping SOURCES_TO_CREATE between runs.
 const TRIGGER_AGGREGATION = false;
-// Dedicated SharePoint folder for identity-creation evidence, already
-// created by a teammate — a SIBLING of testplaywright_testcases under
-// Rush_TestCases, not a child of it, so this is its own direct sharing URL
-// rather than a subfolder name under the default SHAREPOINT_FOLDER_URL.
-// Upload goes straight into this folder — no subfolder is created inside it.
-const VDI_AUTOMATION_EVIDENCE_FOLDER_URL =
-  'https://netorgft1314491.sharepoint.com/:f:/s/AsbRushISC/IgCaiDn8JnZXRJHaP0WojAT4AUK0-wlDMgOshHbceu8ivy8?e=V6MMsT';
-
-// Runs one query through ssms-capture.ps1 and returns the screenshot path —
-// same query-via-temp-file mechanism as ssms-my-rush-jobs.spec.ts (avoids
-// passing SQL text as a CLI argument, which powershell.exe -File mangles).
-function runSsmsCapture(query: string, outDir: string, stageKey: string, suffix: string): string {
-  const queryPath = path.join(outDir, `create_${stageKey}_${suffix}.sql`);
-  const outPath = path.join(outDir, `create_${stageKey}_${suffix}.png`);
-  fs.writeFileSync(queryPath, query, 'utf8');
-  const psScript = path.resolve('scripts', 'ssms-capture.ps1');
-  try {
-    execFileSync(
-      'powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', psScript, '-QueryFile', queryPath, '-OutputPath', outPath],
-      // A full My_Rush_Jobs INSERT is ~2000+ escaped characters, and
-      // SendKeys types character-by-character — confirmed via a live run
-      // that 60s isn't enough (it was still typing, past character 1500,
-      // when the process got killed). The SELECT verification query is
-      // short and finishes in seconds either way, so one generous timeout
-      // covers both without needing to special-case query length.
-      { stdio: 'inherit', timeout: 180_000 }
-    );
-  } finally {
-    fs.rmSync(queryPath, { force: true });
-  }
-  if (!fs.existsSync(outPath)) {
-    throw new Error(`Expected screenshot at ${outPath} but it wasn't created.`);
-  }
-  return outPath;
-}
 
 test('Create identity — INSERT + verify via SSMS', async () => {
   test.skip(process.platform !== 'win32', 'SSMS automation only runs on Windows — run this from inside the VDI.');
@@ -329,8 +293,7 @@ test('Create identity — INSERT + verify via SSMS', async () => {
     console.log(`INSERT screenshot: ${insertScreenshot}`);
 
     console.log('Running verification SELECT in SSMS...');
-    const selectQuery = `SELECT * FROM [SOA].[dbo].[My_Rush_Jobs] WHERE Stage_Key = '${row.stageKey}';`;
-    const selectScreenshot = runSsmsCapture(selectQuery, outDir, row.stageKey, 'select');
+    const selectScreenshot = runSsmsCapture(verificationSelect(row.stageKey), outDir, row.stageKey, 'select');
     console.log(`SELECT screenshot: ${selectScreenshot}`);
 
     // Structured verification: confirm every generated field actually landed

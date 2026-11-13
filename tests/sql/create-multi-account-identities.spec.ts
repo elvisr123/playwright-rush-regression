@@ -11,6 +11,9 @@ import {
   isDbConfigured,
 } from '../helpers/dbClient';
 import { evaluateCheck } from '../helpers/expectedValueCheck';
+import { buildIdentityCreationReport, CreationAttributeRow } from '../helpers/buildReport';
+import { buildReportFileName, uploadFileToSharePointFolder, removeLocalReportCopy } from '../helpers/sharepointUpload';
+import { runSsmsCapture, verificationSelect, VDI_AUTOMATION_EVIDENCE_FOLDER_URL } from '../helpers/ssmsCapture';
 import { allocateUserIds, describeUserIdPicks, isInSourceTiers, userIdMap } from '../helpers/userIdAllocator';
 import { SOURCES } from '../config/sources';
 import {
@@ -31,7 +34,7 @@ import {
 // My_Rush_Jobs rows, one per source, each in its own lifecycle.
 //
 //   npx playwright test tests/sql/create-multi-account-identities.spec.ts
-//   (pick the two accounts in ACCOUNTS_TO_CREATE below; npm run multi:create is the same command)
+//   (list the pairs in IDENTITIES_TO_CREATE below; npm run multi:create is the same command)
 //
 // Multi-account rules enforced here (and again in generate_identity.py):
 //   shared across both rows — Given_Name/Family_Name/Display_Name,
@@ -56,22 +59,33 @@ const TABLE = 'My_Rush_Jobs';
 // EDIT HERE, then run:
 //   npx playwright test tests/sql/create-multi-account-identities.spec.ts
 //
-// Same convention as create-and-insert-identity.spec.ts's SOURCES_TO_CREATE /
-// LIFECYCLE: one run = one new identity with these two accounts. Running it
-// again creates another, separate identity with the same combination.
+// One entry = one new identity with those two accounts. List as many as you
+// want created in one run (1 for a single identity, 10 for a bulk run, ...).
+// The same pair listed twice creates two separate identities; running the
+// spec again creates new ones again (no skipping in this mode).
 //
 // sourceKey: 'rush' | 'copley' | 'nerm' | 'echo' | 'ellucian'
 // lifecycle: 'active' | 'prehire' | 'futurehire'
 // (Ellucian is active-only, and Copley + NERM has no NERM futurehire, as in
-// the scenario table — an unsupported pair fails with the list of valid ones.)
-const ACCOUNTS_TO_CREATE: MultiAccountSide[] = [
-  { sourceKey: 'rush', lifecycle: 'active' },
-  { sourceKey: 'copley', lifecycle: 'prehire' },
+// the scenario table — an unsupported pair fails with the list of valid ones,
+// and every pair is checked before anything is created.)
+const IDENTITIES_TO_CREATE: MultiAccountSide[][] = [
+  [{ sourceKey: 'rush', lifecycle: 'active' }, { sourceKey: 'copley', lifecycle: 'prehire' }],
 ];
 
-// true = ignore ACCOUNTS_TO_CREATE and create all 63 scenarios in one go
+// true = ignore IDENTITIES_TO_CREATE and create all 63 scenarios in one go
 // (resumable: scenarios already in temp/multi_account_manifest.json are skipped).
 const CREATE_ALL_SCENARIOS = false;
+
+// true = do it like create-and-insert-identity.spec.ts: run each account's
+// INSERT and verification SELECT in the open, signed-in SSMS window
+// (screenshotted), build a Word creation report per account (both
+// screenshots + the field-by-field table) and upload it to the
+// VDI_Automation_Evidence SharePoint folder. Windows/VDI only, and SSMS must
+// already be open and connected. Takes a few minutes per account (2 per
+// identity) and opens 2 query tabs per account — close old tabs first.
+// false = fast: INSERT straight over the DB connection, no screenshots/report.
+const USE_SSMS = true;
 // ---------------------------------------------------------------------------
 
 // Regenerations allowed per scenario on a name/Stage_Key/User_ID collision.
@@ -97,21 +111,22 @@ interface ScenarioFailure {
 }
 
 /**
- * The scenario matching ACCOUNTS_TO_CREATE, in either order. Must be one of
- * the 63 rows in tests/config/multiAccountScenarios.ts, so a typo'd source or
- * an unsupported combination (e.g. Ellucian prehire) fails before anything is
- * generated.
+ * The scenario matching one IDENTITIES_TO_CREATE entry, in either order. Must
+ * be one of the 63 rows in tests/config/multiAccountScenarios.ts, so a typo'd
+ * source or an unsupported combination (e.g. Ellucian prehire) fails before
+ * anything is generated.
  */
-function scenarioForAccounts(accounts: MultiAccountSide[]): MultiAccountScenario {
+function scenarioForAccounts(accounts: MultiAccountSide[], index: number): MultiAccountScenario {
+  const where = `IDENTITIES_TO_CREATE entry ${index + 1}`;
   if (accounts.length !== 2) {
-    throw new Error(`ACCOUNTS_TO_CREATE must list exactly 2 accounts, got ${accounts.length}.`);
+    throw new Error(`${where} must list exactly 2 accounts, got ${accounts.length}.`);
   }
   const key = (a: MultiAccountSide) => `${a.sourceKey}:${a.lifecycle}`;
   const wanted = accounts.map(key).sort().join('+');
   const found = MULTI_ACCOUNT_SCENARIOS.find((s) => s.accounts.map(key).sort().join('+') === wanted);
   if (!found) {
     throw new Error(
-      `ACCOUNTS_TO_CREATE (${accounts.map(key).join(' + ')}) is not one of the multi-account scenarios. ` +
+      `${where} (${accounts.map(key).join(' + ')}) is not one of the multi-account scenarios. ` +
         `Valid combinations:\n` +
         MULTI_ACCOUNT_SCENARIOS.map((s) => `  ${s.accounts.map(key).join(' + ')}`).join('\n')
     );
@@ -120,7 +135,9 @@ function scenarioForAccounts(accounts: MultiAccountSide[]): MultiAccountScenario
 }
 
 function selectedScenarios(): MultiAccountScenario[] {
-  return CREATE_ALL_SCENARIOS ? MULTI_ACCOUNT_SCENARIOS : [scenarioForAccounts(ACCOUNTS_TO_CREATE)];
+  if (CREATE_ALL_SCENARIOS) return MULTI_ACCOUNT_SCENARIOS;
+  if (IDENTITIES_TO_CREATE.length === 0) throw new Error('IDENTITIES_TO_CREATE is empty — list at least one pair.');
+  return IDENTITIES_TO_CREATE.map((accounts, i) => scenarioForAccounts(accounts, i));
 }
 
 /** Multi-account rule violations on a freshly generated identity (empty = OK). */
@@ -152,6 +169,25 @@ function ruleViolations(scenario: MultiAccountScenario, generated: GeneratedIden
   return problems;
 }
 
+/**
+ * Every generated field vs. the row read back from the DB — the same rows
+ * the single-account spec puts in its Word report's attribute table.
+ */
+function compareWithDb(generatedRow: Record<string, unknown>, dbRow: Record<string, string> | undefined): CreationAttributeRow[] {
+  const values: Record<string, string[]> = {};
+  for (const [column, value] of Object.entries(dbRow ?? {})) values[column] = [value];
+  return Object.entries(generatedRow).map(([field, value]) => {
+    const generatedValue = value === null || value === undefined ? '' : String(value);
+    const dbValue = dbRow?.[field] ?? '';
+    if (!generatedValue.trim()) {
+      return { field, generatedValue: 'NULL', dbValue: dbValue || 'NULL', result: 'skipped' as const };
+    }
+    if (!dbRow) return { field, generatedValue, dbValue: '(no row found)', result: 'no_row' as const };
+    const pass = evaluateCheck({ field, expected: generatedValue }, values)?.result === 'PASS';
+    return { field, generatedValue, dbValue: dbValue || '(not found)', result: pass ? ('match' as const) : ('mismatch' as const) };
+  });
+}
+
 async function firstCollision(generated: GeneratedIdentity): Promise<string> {
   const given = generated.rows[0].row['Given_Name'];
   const family = generated.rows[0].row['Family_Name'];
@@ -174,16 +210,27 @@ async function firstCollision(generated: GeneratedIdentity): Promise<string> {
   return '';
 }
 
-test('Create multi-account identities — INSERT + DB verify, no SSMS', async () => {
+test('Create multi-account identities — INSERT + DB verify', async () => {
   test.skip(
     !isDbConfigured(),
     'Needs DB_SERVER/DB_DATABASE/DB_USERNAME/DB_PASSWORD — run this from inside the VDI.'
   );
-  test.setTimeout(3_600_000);
-  fs.mkdirSync(path.resolve('temp'), { recursive: true });
+  test.skip(
+    USE_SSMS && process.platform !== 'win32',
+    'USE_SSMS drives the SSMS window, which only runs on Windows — run this from inside the VDI (or set USE_SSMS = false).'
+  );
+  const outDir = path.resolve('temp');
+  fs.mkdirSync(outDir, { recursive: true });
 
   const scenarios = selectedScenarios();
-  console.log(`${scenarios.length} multi-account scenario(s) selected.`);
+  // SSMS: up to 2 × 180s captures per account plus an upload (which may need
+  // a one-time SSO sign-in) — budget 15 min per identity.
+  test.setTimeout(USE_SSMS ? Math.max(3_600_000, scenarios.length * 900_000) : 3_600_000);
+  console.log(
+    `${scenarios.length} multi-account scenario(s) selected — ` +
+      (USE_SSMS ? 'INSERT via SSMS with screenshots + Word report per account.' : 'direct INSERT, no SSMS.')
+  );
+  const uploadFailures: string[] = [];
 
   const probe = await canInsert(TABLE, `MULTI-PROBE-${scenarios.length}`);
   console.log(`INSERT pre-flight: ${probe.verdict} — ${probe.detail}`);
@@ -259,29 +306,64 @@ test('Create multi-account identities — INSERT + DB verify, no SSMS', async ()
           `IIQDisabled ${r.row['IIQDisabled']}, Manager ${r.row['Manager_Name']}/${r.row['Manager_Employee_ID']}, ` +
           `one-up ${r.row['OneUp_Manager_Employee_ID']}`
       );
+      let insertScreenshot = '';
+      let selectScreenshot = '';
       try {
-        const affected = await runGeneratedInsert(TABLE, r.insertSql);
-        if (affected !== 1) accountProblems.push(`${r.stageKey}: INSERT affected ${affected} rows`);
+        if (USE_SSMS) {
+          // SSMS doesn't report SQL errors back to us — a failed INSERT shows
+          // up as "no row after INSERT" below (and in the screenshot).
+          console.log('  Running INSERT in SSMS...');
+          insertScreenshot = runSsmsCapture(r.insertSql, outDir, r.stageKey, 'insert');
+          console.log('  Running verification SELECT in SSMS...');
+          selectScreenshot = runSsmsCapture(verificationSelect(r.stageKey), outDir, r.stageKey, 'select');
+        } else {
+          const affected = await runGeneratedInsert(TABLE, r.insertSql);
+          if (affected !== 1) accountProblems.push(`${r.stageKey}: INSERT affected ${affected} rows`);
+        }
       } catch (err) {
         allVerified = false;
         accountProblems.push(`${r.stageKey}: INSERT failed — ${(err as Error).message}`);
         break;
       }
       const dbRow = await getStagingRow(TABLE, r.stageKey);
+      const attributeRows = compareWithDb(r.row, dbRow ?? undefined);
       if (!dbRow) {
         allVerified = false;
         accountProblems.push(`${r.stageKey}: no row after INSERT`);
-        continue;
-      }
-      dbRows.push(dbRow);
-      const values: Record<string, string[]> = {};
-      for (const [column, value] of Object.entries(dbRow)) values[column] = [value];
-      for (const [field, value] of Object.entries(r.row)) {
-        const expected = value === null || value === undefined ? '' : String(value);
-        if (!expected.trim()) continue;
-        if (evaluateCheck({ field, expected }, values)?.result !== 'PASS') {
+      } else {
+        dbRows.push(dbRow);
+        for (const a of attributeRows.filter((x) => x.result === 'mismatch')) {
           allVerified = false;
-          accountProblems.push(`${r.stageKey} ${field}: generated "${expected}", DB "${dbRow[field] ?? '(missing)'}"`);
+          accountProblems.push(`${r.stageKey} ${a.field}: generated "${a.generatedValue}", DB "${a.dbValue}"`);
+        }
+      }
+
+      if (USE_SSMS) {
+        const reportPath = path.join(outDir, `Creation_${buildReportFileName(`${r.sourceKey}_${r.stageKey}`)}`);
+        await buildIdentityCreationReport(
+          {
+            identityName: `${generated.firstName} ${generated.lastName}`,
+            stageKey: r.stageKey,
+            sourceName: r.sourceName,
+            lifecycle: r.lifecycle ?? '',
+          },
+          insertScreenshot,
+          selectScreenshot,
+          attributeRows,
+          reportPath
+        );
+        console.log('  Uploading creation report to SharePoint (VDI_Automation_Evidence)...');
+        try {
+          if (await uploadFileToSharePointFolder(reportPath, path.basename(reportPath), VDI_AUTOMATION_EVIDENCE_FOLDER_URL)) {
+            removeLocalReportCopy(reportPath);
+          } else {
+            console.log(`  SharePoint publish skipped — report kept at ${reportPath}`);
+          }
+        } catch (err) {
+          // Never costs the created row or the manifest; asserted at the end.
+          const message = err instanceof Error ? err.message : String(err);
+          console.log(`  SharePoint upload failed — report kept at ${reportPath}. (${message})`);
+          uploadFailures.push(`S.No ${scenario.sNo} ${r.sourceName} (${r.stageKey}): ${message}`);
         }
       }
     }
@@ -334,5 +416,11 @@ test('Create multi-account identities — INSERT + DB verify, no SSMS', async ()
     failures,
     `${failures.length} scenario(s) did not come out clean:\n` +
       failures.map((f) => `  S.No ${f.sNo} ${f.label}: ${f.reason}`).join('\n')
+  ).toEqual([]);
+  expect(
+    uploadFailures,
+    `${uploadFailures.length} creation report(s) were not uploaded — the identities are fine, ` +
+      `the .docx files are still in temp/ for a manual upload:\n` +
+      uploadFailures.map((f) => `  ${f}`).join('\n')
   ).toEqual([]);
 });
