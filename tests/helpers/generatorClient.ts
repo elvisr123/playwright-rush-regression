@@ -6,15 +6,23 @@ export interface GeneratedRow {
   sourceKey: string;
   sourceName: string;
   stageKey: string;
+  /** Per-row lifecycle — required for mixed multi-account identities. */
+  lifecycle?: LifecycleState;
   insertSql: string;
   row: Record<string, string | null>;
 }
 
 export interface GeneratedIdentity {
-  lifecycle: LifecycleState;
+  /** Shared lifecycle, or 'mixed' when --accounts used different states. */
+  lifecycle: LifecycleState | 'mixed';
   firstName: string;
   lastName: string;
   rows: GeneratedRow[];
+}
+
+export interface SourceAccount {
+  sourceKey: string;
+  lifecycle: LifecycleState;
 }
 
 export interface GenerateOptions {
@@ -112,26 +120,13 @@ function resolvePython(): string[] {
   );
 }
 
-export function runGenerator(
-  sources: string[],
-  lifecycle: LifecycleState,
-  opts: GenerateOptions = {}
-): GeneratedIdentity {
+function runGenerateScript(scriptArgs: string[]): GeneratedIdentity {
   const script = path.resolve('identity-factory', 'generate_identity.py');
-  const args = [script, '--sources', ...sources, '--lifecycle', lifecycle];
-  if (opts.first) args.push('--first', opts.first);
-  if (opts.last) args.push('--last', opts.last);
-  if (opts.out) args.push('--out', opts.out);
-  if (opts.number) args.push('--number', opts.number);
-  if (opts.birthDate) args.push('--birth-date', opts.birthDate);
-  if (opts.correlationKey) args.push('--correlation-key', opts.correlationKey);
-  if (opts.startDate) args.push('--start-date', opts.startDate);
-  if (opts.primaryPosition) args.push('--primary-position', opts.primaryPosition);
-  if (opts.oneUpManagerEmployeeId) args.push('--oneup-manager-employee-id', opts.oneUpManagerEmployeeId);
-  if (opts.endDate) args.push('--end-date', opts.endDate);
-
   const [pythonCmd, ...pythonPrefixArgs] = resolvePython();
-  const stdout = execFileSync(pythonCmd, [...pythonPrefixArgs, ...args], { encoding: 'utf8', timeout: 60_000 });
+  const stdout = execFileSync(pythonCmd, [...pythonPrefixArgs, script, ...scriptArgs], {
+    encoding: 'utf8',
+    timeout: 60_000,
+  });
 
   // The script writes only the JSON payload to stdout (everything else goes
   // to stderr) — but take the last non-empty line defensively, in case
@@ -145,6 +140,46 @@ export function runGenerator(
     throw new Error('generate_identity.py produced no output.');
   }
   return JSON.parse(jsonLine) as GeneratedIdentity;
+}
+
+function appendGenerateOptions(args: string[], opts: GenerateOptions): void {
+  if (opts.first) args.push('--first', opts.first);
+  if (opts.last) args.push('--last', opts.last);
+  if (opts.out) args.push('--out', opts.out);
+  if (opts.number) args.push('--number', opts.number);
+  if (opts.birthDate) args.push('--birth-date', opts.birthDate);
+  if (opts.correlationKey) args.push('--correlation-key', opts.correlationKey);
+  if (opts.startDate) args.push('--start-date', opts.startDate);
+  if (opts.primaryPosition) args.push('--primary-position', opts.primaryPosition);
+  if (opts.oneUpManagerEmployeeId) args.push('--oneup-manager-employee-id', opts.oneUpManagerEmployeeId);
+  if (opts.endDate) args.push('--end-date', opts.endDate);
+}
+
+export function runGenerator(
+  sources: string[],
+  lifecycle: LifecycleState,
+  opts: GenerateOptions = {}
+): GeneratedIdentity {
+  const args = ['--sources', ...sources, '--lifecycle', lifecycle];
+  appendGenerateOptions(args, opts);
+  return runGenerateScript(args);
+}
+
+/**
+ * One identity, one row per account, each account with its own lifecycle.
+ * Shared: name, Birth_Date, number, Correlation_Key. Per source: template
+ * attributes (manager/dept/…) plus that lifecycle's dates/Status/IIQDisabled.
+ */
+export function runMultiAccountGenerator(
+  accounts: SourceAccount[],
+  opts: GenerateOptions = {}
+): GeneratedIdentity {
+  if (accounts.length < 2) {
+    throw new Error('runMultiAccountGenerator needs at least two SOURCE:LIFECYCLE accounts.');
+  }
+  const args = ['--accounts', ...accounts.map((a) => `${a.sourceKey}:${a.lifecycle}`)];
+  appendGenerateOptions(args, opts);
+  return runGenerateScript(args);
 }
 
 /** The five My_Rush_Jobs columns that make up a row's manager. */

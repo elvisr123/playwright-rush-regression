@@ -14,6 +14,7 @@ via SSMS.
   cd identity-factory
   python generate_identity.py --sources copley --lifecycle active
   python generate_identity.py --sources copley rush --lifecycle active --first Jane --last Doe
+  python generate_identity.py --accounts rush:active copley:prehire
 
 To add another source to an identity that already exists (e.g. someone
 created Workday-only earlier and now also needs a Copley account), pass
@@ -90,6 +91,30 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT_DIR = REPO_ROOT / "temp"
 
 
+def parse_account_token(token: str) -> tuple[str, str]:
+    """'rush:active' -> ('rush', 'active'). Used by --accounts so each source
+    on one identity can have its own lifecycle (mixed multi-account cases)
+    while still sharing name/DOB/number/Correlation_Key."""
+    if ":" not in token:
+        raise argparse.ArgumentTypeError(
+            f'--accounts values must be SOURCE:LIFECYCLE (e.g. rush:active), got "{token}".'
+        )
+    source_key, lifecycle = token.split(":", 1)
+    source_key = source_key.strip().lower()
+    lifecycle = lifecycle.strip().lower().replace(" ", "").replace("-", "")
+    aliases = {"futurehire": "futurehire", "future": "futurehire"}
+    lifecycle = aliases.get(lifecycle, lifecycle)
+    if source_key not in SOURCES:
+        raise argparse.ArgumentTypeError(
+            f'Unknown source "{source_key}". Known: {", ".join(sorted(SOURCES))}.'
+        )
+    if lifecycle not in LIFECYCLES:
+        raise argparse.ArgumentTypeError(
+            f'Unknown lifecycle "{lifecycle}". Known: {", ".join(LIFECYCLES)}.'
+        )
+    return source_key, lifecycle
+
+
 def allocate_number(prefixes: list[str], used: set[str]) -> str:
     """One number shared across every requested source's Stage_Key for this
     identity, retried together so no source's key collides with an
@@ -105,10 +130,21 @@ def allocate_number(prefixes: list[str], used: set[str]) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
-        "--sources", nargs="+", required=True, choices=list(SOURCES),
-        help="One or more source keys. Multiple = one person with an account on each.",
+        "--sources", nargs="+", choices=list(SOURCES),
+        help="One or more source keys. Multiple = one person with an account on each. "
+             "Requires --lifecycle (same state on every source). For mixed states use --accounts.",
     )
-    parser.add_argument("--lifecycle", required=True, choices=list(LIFECYCLES))
+    parser.add_argument(
+        "--lifecycle", choices=list(LIFECYCLES),
+        help="Lifecycle applied to every --sources row. Omit when using --accounts.",
+    )
+    parser.add_argument(
+        "--accounts", nargs="+", metavar="SOURCE:LIFECYCLE",
+        help="Per-source lifecycle on one identity, e.g. rush:active copley:prehire. "
+             "Same correlation rules as --sources (shared name/DOB/number/Correlation_Key); "
+             "each row gets its own lifecycle dates plus that source's structural template. "
+             "Mutually exclusive with --sources/--lifecycle.",
+    )
     parser.add_argument("--first", default=None, help="Override first name. Default: a new random name each run.")
     parser.add_argument("--last", default=None, help="Override last name. Default: a new random name each run.")
     parser.add_argument(
@@ -189,6 +225,21 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.accounts and (args.sources or args.lifecycle):
+        parser.error("--accounts cannot be combined with --sources/--lifecycle.")
+    if args.accounts:
+        try:
+            accounts = [parse_account_token(token) for token in args.accounts]
+        except argparse.ArgumentTypeError as err:
+            parser.error(str(err))
+        seen_sources = [source for source, _ in accounts]
+        if len(set(seen_sources)) != len(seen_sources):
+            parser.error("--accounts lists the same source more than once — each source can appear only once on one identity.")
+    elif args.sources and args.lifecycle:
+        accounts = [(source_key, args.lifecycle) for source_key in args.sources]
+    else:
+        parser.error("Provide either --sources plus --lifecycle, or --accounts SOURCE:LIFECYCLE ...")
+
     if args.number and not (args.first and args.last):
         parser.error("--number requires --first and --last (the existing identity's exact name).")
     if args.number and not (args.number.isdigit() and len(args.number) == 12):
@@ -199,7 +250,7 @@ def main() -> None:
         first, last = unused_person_name(used_first_last())
 
     used = used_stage_keys()
-    prefixes = [SOURCES[s]["prefix"] for s in args.sources]
+    prefixes = [SOURCES[source_key]["prefix"] for source_key, _ in accounts]
     if args.number:
         number = args.number
         collisions = [stage_key(p, number) for p in prefixes if stage_key(p, number) in used]
@@ -214,32 +265,43 @@ def main() -> None:
     birth_date = args.birth_date or random_birth_date()
 
     rows = []
-    for source_key in args.sources:
+    for source_key, lifecycle in accounts:
         cfg = SOURCES[source_key]
         key = stage_key(cfg["prefix"], number)
         row = build_my_rush_jobs_row(
-            source_key, key, number, first, last, args.lifecycle, birth_date, args.correlation_key, args.start_date,
+            source_key, key, number, first, last, lifecycle, birth_date, args.correlation_key, args.start_date,
             args.primary_position, args.oneup_manager_employee_id, args.end_date,
         )
         save_row(row)
-        append_identity(args.lifecycle, row)
+        append_identity(lifecycle, row)
         rows.append(
             {
                 "sourceKey": source_key,
                 "sourceName": cfg["name"],
                 "stageKey": key,
+                "lifecycle": lifecycle,
                 "insertSql": to_insert_sql(row),
                 "row": row,
             }
         )
-        print(f"Generated {cfg['name']} row: {key}", file=sys.stderr)
+        print(f"Generated {cfg['name']} {lifecycle} row: {key}", file=sys.stderr)
 
-    label = f"{first}_{last}_{args.lifecycle}".replace(" ", "_")
+    # Multi-account correlation rules: one person, two (or more) HR rows.
+    correlation_keys = {item["row"]["Correlation_Key"] for item in rows}
+    birth_dates = {item["row"]["Birth_Date"] for item in rows}
+    if len(correlation_keys) != 1:
+        raise SystemExit(f"Correlation_Key must be identical across sources, got {correlation_keys}")
+    if len(birth_dates) != 1:
+        raise SystemExit(f"Birth_Date must be identical across sources, got {birth_dates}")
+
+    lifecycle_tag = accounts[0][1] if len(set(lc for _, lc in accounts)) == 1 else "mixed"
+    source_tag = "_".join(f"{source_key}_{lifecycle}" for source_key, lifecycle in accounts)
+    label = f"{first}_{last}_{source_tag}".replace(" ", "_")
     out_path = Path(args.out) if args.out else DEFAULT_OUT_DIR / f"generated_identity_{label}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     payload = {
-        "lifecycle": args.lifecycle,
+        "lifecycle": lifecycle_tag,
         "firstName": first,
         "lastName": last,
         "rows": rows,

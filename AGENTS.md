@@ -405,6 +405,17 @@ Deliberately **not** run from the Mac: the generator itself, because `generate_i
 
 - **Pre-existing oddity, left alone**: `tests/sources/echo/active.spec.ts`'s hardcoded fallback Stage_Key is `RL-98100122712TESTCL000PD` — an `RL-` (RUSH Lawson) key in an ECHO spec, identical to `rush-lawson/active.spec.ts`'s. Either that identity genuinely has both accounts, or it is a copy-paste leftover and the ECHO spec has been documenting a RUSH account. The batch manifest overrides it either way, so it does not affect this run; worth checking before relying on that spec outside a batch.
 
+## Multi-account identities — 63 two-source scenarios (2026-11-13, user-requested)
+
+User supplied a 205-row Source1×Lifecycle1 / Source2×Lifecycle2 table and asked for all of it **excluding termed and inactive** → 63 scenarios in `tests/config/multiAccountScenarios.ts` (`sNo` = the original table row, gaps are the excluded rows; Ellucian only appears as `active`, and Copley×NERM has no NERM futurehire — both as in the user's table). Each scenario is **one identity with two `My_Rush_Jobs` rows**, each row in its own lifecycle.
+
+- Generator: `generate_identity.py --accounts rush:active copley:prehire` (per-row lifecycle; mutually exclusive with `--sources/--lifecycle`), `generatorClient.ts`'s `runMultiAccountGenerator()`.
+- Creation: `npm run multi:create` (`tests/sql/create-multi-account-identities.spec.ts`, `sql-tools` project). Subset via `$env:MULTI_ACCOUNT_SNOS='1,2,3'`. Same conventions as `batch:create`: mssql INSERT (no SSMS screenshots), live-DB name/Stage_Key/User_ID collision checks with regeneration (15 attempts), resumable manifest at `temp/multi_account_manifest.json` rewritten after each scenario, failures asserted at the end, no aggregation.
+- **Multi-account rules, checked before INSERT and again on the stored rows**: shared `Given_Name`/`Family_Name`/`Display_Name`/`Birth_Date`/`Correlation_Key`/`Provider_National_ID` and Stage_Key number; per-source `User_ID` prefix (so the two User_IDs differ), per-source template (manager/one-up/department/…), per-row lifecycle dates/Status/IIQDisabled. A rule violation is not retried — it means a code bug.
+- **Capacity risk**: rush is in 30 scenarios and copley in 27, against 100 possible User_IDs each over the project's lifetime. If a scenario fails with "no collision-free identity", that source's ID space is close to exhausted — widening `source_user_id()` is the real fix.
+- Both rows keep their template `Primary_Position="YES"` (no rule in the repo says otherwise for multi-account).
+- Verified offline: all 63 build rule-clean rows; `npx tsc --noEmit` clean; spec lists under `sql-tools`. **Not live-tested** — needs the VDI.
+
 ## SharePoint uploads are single-threaded — never run them in parallel
 
 `uploadFileToSharePointFolder` begins with `stopChromeUsingProfile(UPLOAD_PROFILE_DIR)`, which **kills every Chrome using the shared upload profile** (`playwright/.auth/chrome-sharepoint`) before launching its own. That is fine for one upload at a time and fatal for several: each worker's first act is to kill the upload a sibling worker is in the middle of.
