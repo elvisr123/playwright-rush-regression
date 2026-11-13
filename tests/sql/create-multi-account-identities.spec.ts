@@ -17,6 +17,7 @@ import {
   MULTI_ACCOUNT_MANIFEST_PATH,
   MultiAccountManifestEntry,
   MultiAccountScenario,
+  MultiAccountSide,
   readMultiAccountManifest,
   writeMultiAccountManifest,
   formatMultiAccountTable,
@@ -28,8 +29,8 @@ import {
 // inactive excluded — 63 scenarios). Each scenario = ONE identity with TWO
 // My_Rush_Jobs rows, one per source, each in its own lifecycle.
 //
-//   npm run multi:create                              # all 63
-//   $env:MULTI_ACCOUNT_SNOS='1,2,3'; npm run multi:create   # a subset (PowerShell)
+//   npx playwright test tests/sql/create-multi-account-identities.spec.ts
+//   (pick the two accounts in ACCOUNTS_TO_CREATE below; npm run multi:create is the same command)
 //
 // Multi-account rules enforced here (and again in generate_identity.py):
 //   shared across both rows — Given_Name/Family_Name/Display_Name,
@@ -49,6 +50,28 @@ import {
 // asserted at the end so one bad scenario doesn't stop the rest. No
 // aggregation — aggregate the sources manually afterwards.
 const TABLE = 'My_Rush_Jobs';
+
+// ---------------------------------------------------------------------------
+// EDIT HERE, then run:
+//   npx playwright test tests/sql/create-multi-account-identities.spec.ts
+//
+// Same convention as create-and-insert-identity.spec.ts's SOURCES_TO_CREATE /
+// LIFECYCLE: one run = one new identity with these two accounts. Running it
+// again creates another, separate identity with the same combination.
+//
+// sourceKey: 'rush' | 'copley' | 'nerm' | 'echo' | 'ellucian'
+// lifecycle: 'active' | 'prehire' | 'futurehire'
+// (Ellucian is active-only, and Copley + NERM has no NERM futurehire, as in
+// the scenario table — an unsupported pair fails with the list of valid ones.)
+const ACCOUNTS_TO_CREATE: MultiAccountSide[] = [
+  { sourceKey: 'rush', lifecycle: 'active' },
+  { sourceKey: 'copley', lifecycle: 'prehire' },
+];
+
+// true = ignore ACCOUNTS_TO_CREATE and create all 63 scenarios in one go
+// (resumable: scenarios already in temp/multi_account_manifest.json are skipped).
+const CREATE_ALL_SCENARIOS = false;
+// ---------------------------------------------------------------------------
 
 // Higher than the batch spec's 6: rush appears in 30 of these scenarios and
 // copley in 27, and each of those sources has only 100 possible User_IDs
@@ -82,18 +105,31 @@ interface ScenarioFailure {
   reason: string;
 }
 
-function selectedScenarios(): MultiAccountScenario[] {
-  const raw = process.env.MULTI_ACCOUNT_SNOS?.trim();
-  if (!raw) return MULTI_ACCOUNT_SCENARIOS;
-  const wanted = raw.split(',').map((v) => Number(v.trim())).filter((n) => Number.isInteger(n));
-  const unknown = wanted.filter((n) => !MULTI_ACCOUNT_SCENARIOS.some((s) => s.sNo === n));
-  if (unknown.length > 0) {
+/**
+ * The scenario matching ACCOUNTS_TO_CREATE, in either order. Must be one of
+ * the 63 rows in tests/config/multiAccountScenarios.ts, so a typo'd source or
+ * an unsupported combination (e.g. Ellucian prehire) fails before anything is
+ * generated.
+ */
+function scenarioForAccounts(accounts: MultiAccountSide[]): MultiAccountScenario {
+  if (accounts.length !== 2) {
+    throw new Error(`ACCOUNTS_TO_CREATE must list exactly 2 accounts, got ${accounts.length}.`);
+  }
+  const key = (a: MultiAccountSide) => `${a.sourceKey}:${a.lifecycle}`;
+  const wanted = accounts.map(key).sort().join('+');
+  const found = MULTI_ACCOUNT_SCENARIOS.find((s) => s.accounts.map(key).sort().join('+') === wanted);
+  if (!found) {
     throw new Error(
-      `MULTI_ACCOUNT_SNOS contains ${unknown.join(', ')}, which are not scenarios (termed/inactive rows were ` +
-        `excluded). Valid: ${MULTI_ACCOUNT_SCENARIOS.map((s) => s.sNo).join(', ')}`
+      `ACCOUNTS_TO_CREATE (${accounts.map(key).join(' + ')}) is not one of the multi-account scenarios. ` +
+        `Valid combinations:\n` +
+        MULTI_ACCOUNT_SCENARIOS.map((s) => `  ${s.accounts.map(key).join(' + ')}`).join('\n')
     );
   }
-  return MULTI_ACCOUNT_SCENARIOS.filter((s) => wanted.includes(s.sNo));
+  return found;
+}
+
+function selectedScenarios(): MultiAccountScenario[] {
+  return CREATE_ALL_SCENARIOS ? MULTI_ACCOUNT_SCENARIOS : [scenarioForAccounts(ACCOUNTS_TO_CREATE)];
 }
 
 /** Multi-account rule violations on a freshly generated identity (empty = OK). */
@@ -169,7 +205,9 @@ test('Create multi-account identities — INSERT + DB verify, no SSMS', async ()
 
   for (const scenario of scenarios) {
     const label = scenarioLabel(scenario);
-    if (entries.some((e) => e.sNo === scenario.sNo)) {
+    // Resume only applies to the all-scenarios run; a hand-picked pair always
+    // creates a new identity, like the single-account spec.
+    if (CREATE_ALL_SCENARIOS && entries.some((e) => e.sNo === scenario.sNo)) {
       console.log(`\n--- S.No ${scenario.sNo}: ${label} — already in manifest, skipping ---`);
       continue;
     }
