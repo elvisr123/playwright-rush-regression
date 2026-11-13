@@ -19,6 +19,13 @@ from source_templates import SOURCE_TEMPLATES
 
 
 def main() -> None:
+    # --user-id-tiers: print {source: [prefix tiers]} instead (see
+    # user_payload.user_id_prefix_tiers) - read by tests/helpers/userIdAllocator.ts.
+    if "--user-id-tiers" in sys.argv[1:]:
+        from user_payload import SOURCES, user_id_prefix_tiers
+
+        print(json.dumps({key: user_id_prefix_tiers(key) for key in SOURCES}))
+        return
     print(json.dumps(SOURCE_TEMPLATES))
 
 

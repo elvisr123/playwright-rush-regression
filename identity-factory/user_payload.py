@@ -286,6 +286,58 @@ def source_user_id(source_key: str, number: str) -> str:
     return f"{prefix}{number[-tail_length:]}"
 
 
+def user_id_prefix_tiers(source_key: str) -> list[str]:
+    """The User_ID prefixes a source may use, in the order they are used up.
+
+    User request (2026-11-13): "if we run out of 001XX for example for rush,
+    we have to move to 01, if that is also ran out of, then 1xxxxx. this
+    should be for all sources". Each tier drops one leading zero from the
+    source's base prefix, so the tail grows by one digit per tier while the
+    total stays USER_ID_LENGTH (6):
+
+        rush   0001xx (100) -> 001xxx (1,000) -> 01xxxx (10,000) -> 1xxxxx (100,000)
+        copley 0002xx       -> 002xxx         -> 02xxxx          -> 2xxxxx
+        nerm   003xxx (1,000) -> 03xxxx (10,000) -> 3xxxxx (100,000)
+        echo 004.., ellucian 005.., workday 006.. likewise
+
+    Tiers never overlap - each has a different number of leading zeros before
+    the source digit - and no two sources share a tier, because the source
+    digit (1-6) always follows the zeros. Existing IDs (all tier 1) keep
+    their meaning.
+
+    Which tier is "used up" is a fact about the live My_Rush_Jobs table, which
+    only the TypeScript side can query; it picks a free ID
+    (tests/helpers/userIdAllocator.ts) and passes it in via
+    build_my_rush_jobs_row(user_id=...). Without that (e.g. the CLI run on its
+    own) source_user_id() keeps deriving a tier-1 ID from `number`."""
+    config = SOURCES.get(source_key)
+    if config is None:
+        raise NotImplementedError(f'No source config for "{source_key}".')
+    prefix = config["user_id_prefix"]
+    tiers = [prefix]
+    while len(prefix) > 1 and prefix.startswith("0"):
+        prefix = prefix[1:]
+        tiers.append(prefix)
+    return tiers
+
+
+def _tier_of(user_id: str) -> str:
+    """Leading zeros plus the first non-zero digit: '000112' -> '0001', '012345' -> '01'."""
+    stripped = user_id.lstrip("0")
+    return user_id[: len(user_id) - len(stripped) + 1]
+
+
+def validate_user_id(source_key: str, user_id: str) -> str:
+    """Raise unless user_id is 6 digits inside one of the source's tiers."""
+    tiers = user_id_prefix_tiers(source_key)
+    if not (user_id.isdigit() and len(user_id) == USER_ID_LENGTH):
+        raise SystemExit(f'User_ID "{user_id}" for {source_key} must be exactly {USER_ID_LENGTH} digits.')
+    if _tier_of(user_id) not in tiers:
+        shapes = ", ".join(t + "x" * (USER_ID_LENGTH - len(t)) for t in tiers)
+        raise SystemExit(f'User_ID "{user_id}" is not in any {source_key} tier ({shapes}).')
+    return user_id
+
+
 def default_correlation_key(base_user_id: str, number: str) -> str:
     """Long, hash-like Correlation_Key in the style of real Rush test data.
 
@@ -341,6 +393,7 @@ def build_my_rush_jobs_row(
     primary_position: str | None = None,
     oneup_manager_employee_id: str | None = None,
     end_date: str | None = None,
+    user_id: str | None = None,
 ) -> dict:
     """One fully populated My_Rush_Jobs row: identity scaffold (this
     function — name/date/generated-ID fields, the same for every source)
@@ -416,7 +469,10 @@ def build_my_rush_jobs_row(
     #                  SailPoint correlates on) and Provider_National_ID (a
     #                  person-level national provider ID in real life, not a
     #                  per-system identifier like the employee ID).
-    user_id = source_user_id(source_key, number)
+    # user_id, if given, is a free ID the caller picked from the live table
+    # (any tier - see user_id_prefix_tiers()); otherwise derive tier 1 from
+    # `number` as before.
+    user_id = validate_user_id(source_key, user_id) if user_id else source_user_id(source_key, number)
     base_user_id = number[-6:]
     email = f"{given}{last}@gmail.com"
     scaffold = {

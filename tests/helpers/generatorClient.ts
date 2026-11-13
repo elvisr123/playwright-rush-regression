@@ -84,6 +84,13 @@ export interface GenerateOptions {
    * startDate as usual, so this blanks only the end date.
    */
   endDate?: string;
+  /**
+   * Exact User_ID per source key, e.g. { rush: '001234' } — normally from
+   * userIdAllocator.allocateUserIds(), which picks a free one from the live
+   * table and walks the prefix tiers. Omitted sources get a tier-1 ID derived
+   * from the number (the old behaviour).
+   */
+  userIds?: Record<string, string>;
 }
 
 /**
@@ -153,6 +160,8 @@ function appendGenerateOptions(args: string[], opts: GenerateOptions): void {
   if (opts.primaryPosition) args.push('--primary-position', opts.primaryPosition);
   if (opts.oneUpManagerEmployeeId) args.push('--oneup-manager-employee-id', opts.oneUpManagerEmployeeId);
   if (opts.endDate) args.push('--end-date', opts.endDate);
+  const userIdArgs = Object.entries(opts.userIds ?? {}).map(([source, id]) => `${source}=${id}`);
+  if (userIdArgs.length > 0) args.push('--user-id', ...userIdArgs);
 }
 
 export function runGenerator(
@@ -216,4 +225,23 @@ export function readSourceTemplates(): Record<string, Record<string, string | nu
     throw new Error('dump_templates.py produced no output.');
   }
   return JSON.parse(jsonLine) as Record<string, Record<string, string | null>>;
+}
+
+/**
+ * { rush: ['0001', '001', '01', '1'], nerm: ['003', '03', '3'], ... } — each
+ * source's User_ID prefix tiers in the order they get used up, read from
+ * identity-factory/user_payload.py's user_id_prefix_tiers() so the rule is
+ * defined once. Allocates nothing.
+ */
+export function readUserIdTiers(): Record<string, string[]> {
+  const script = path.resolve('identity-factory', 'dump_templates.py');
+  const [pythonCmd, ...pythonPrefixArgs] = resolvePython();
+  const stdout = execFileSync(pythonCmd, [...pythonPrefixArgs, script, '--user-id-tiers'], {
+    encoding: 'utf8',
+    timeout: 60_000,
+  });
+  const lines = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+  const jsonLine = lines[lines.length - 1];
+  if (!jsonLine) throw new Error('dump_templates.py --user-id-tiers produced no output.');
+  return JSON.parse(jsonLine) as Record<string, string[]>;
 }

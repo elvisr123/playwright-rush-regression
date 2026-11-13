@@ -412,9 +412,26 @@ User supplied a 205-row Source1×Lifecycle1 / Source2×Lifecycle2 table and aske
 - Generator: `generate_identity.py --accounts rush:active copley:prehire` (per-row lifecycle; mutually exclusive with `--sources/--lifecycle`), `generatorClient.ts`'s `runMultiAccountGenerator()`.
 - Creation: `npx playwright test tests/sql/create-multi-account-identities.spec.ts` (or `npm run multi:create`; `sql-tools` project). Run it like the single-account spec: hand-edit `ACCOUNTS_TO_CREATE` (two `{ sourceKey, lifecycle }` entries, either order) at the top of the file — each run creates one new identity, and the pair must match one of the 63 scenarios or it fails with the valid list. `CREATE_ALL_SCENARIOS = true` creates all 63 instead (the env-var selector `MULTI_ACCOUNT_SNOS` was removed, user preferred the hand-edit convention). Same conventions as `batch:create`: mssql INSERT (no SSMS screenshots), live-DB name/Stage_Key/User_ID collision checks with regeneration (15 attempts), manifest at `temp/multi_account_manifest.json` rewritten after each scenario (resume/skip only in all-scenarios mode), failures asserted at the end, no aggregation.
 - **Multi-account rules, checked before INSERT and again on the stored rows**: shared `Given_Name`/`Family_Name`/`Display_Name`/`Birth_Date`/`Correlation_Key`/`Provider_National_ID` and Stage_Key number; per-source `User_ID` prefix (so the two User_IDs differ), per-source template (manager/one-up/department/…), per-row lifecycle dates/Status/IIQDisabled. A rule violation is not retried — it means a code bug.
-- **Capacity risk**: rush is in 30 scenarios and copley in 27, against 100 possible User_IDs each over the project's lifetime. If a scenario fails with "no collision-free identity", that source's ID space is close to exhausted — widening `source_user_id()` is the real fix.
+- **Capacity**: no longer a risk — User_IDs are allocated free from the live table with tier overflow (see the next section).
 - Both rows keep their template `Primary_Position="YES"` (no rule in the repo says otherwise for multi-account).
 - Verified offline: all 63 build rule-clean rows; `npx tsc --noEmit` clean; spec lists under `sql-tools`. **Not live-tested** — needs the VDI.
+
+## User_ID prefix tiers — overflow instead of running out (2026-11-13, user-requested)
+
+"if we run out of 001XX for example for rush, we have to move to 01, if that is also ran out of, then 1xxxxx. this should be for all sources". Each source's User_ID prefix now has **tiers**, each dropping one leading zero, so the tail grows one digit per tier and the total stays 6 digits:
+
+| source | tiers (in order) | sizes |
+|---|---|---|
+| rush / copley | `0001`/`0002` → `001`/`002` → `01`/`02` → `1`/`2` | 100 → 1,000 → 10,000 → 100,000 |
+| nerm / echo / ellucian / workday | `003`.. `006` → `03`.. → `3`.. | 1,000 → 10,000 → 100,000 |
+
+- Tiers never overlap (different count of leading zeros before the source digit), and no two sources share one (the source digit 1–6 follows the zeros). Every existing ID is tier 1 and keeps its meaning.
+- **The rule lives once, in Python**: `user_payload.user_id_prefix_tiers()` / `validate_user_id()`. `dump_templates.py --user-id-tiers` exposes it to TS (`generatorClient.readUserIdTiers()`).
+- **Allocation is against the live table, not the number**: `tests/helpers/userIdAllocator.ts`'s `allocateUserIds()` queries `My_Rush_Jobs` per tier (`dbClient.findUserIdsWithPrefix`, `LIKE '<tier>%'`), picks a **random free** ID from the first tier with room (random, so two teammates running at once rarely pick the same one), and only moves on when a tier is completely full. Passed to the generator as `generate_identity.py --user-id SOURCE=ID ...` / `GenerateOptions.userIds`; `build_my_rush_jobs_row(user_id=...)` validates it against the tiers.
+- Wired into all three creation specs: `create-and-insert-identity`, `create-batch-identities`, `create-multi-account-identities`. Their `findRowsByUserId` duplicate checks stay as a safety net for the concurrent-insert race.
+- The generator CLI run on its own (no `--user-id`) still derives a tier-1 ID from the number, as before — so it can still collide; only the specs allocate.
+- `Correlation_Key` and `Provider_National_ID` are unaffected (seeded from the number, not the User_ID) — verified identical with and without an explicit User_ID.
+- Verified offline: tier lists for all 6 sources; validation accepts/rejects the right shapes; allocator tier-walk with a faked table (one free left → picks it; tier full → next tier, through to `2xxxxx` for copley; in-run exclusions respected); CLI `--accounts rush:active copley:prehire --user-id rush=012345 copley=000299` produces those IDs with a shared Correlation_Key; `npx tsc --noEmit` clean. Local SQLite/Excel mirrors restored after the CLI test. **Not live-tested** — the `LIKE` query has not run against the real table yet.
 
 ## SharePoint uploads are single-threaded — never run them in parallel
 

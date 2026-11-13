@@ -392,3 +392,39 @@ export async function updateRowFields(
     await pool.close().catch(() => {});
   }
 }
+
+/**
+ * Every User_ID in `table` that starts with `prefix` (one of a source's
+ * User_ID prefix tiers — see identity-factory/user_payload.py's
+ * user_id_prefix_tiers()). Used by tests/helpers/userIdAllocator.ts to find
+ * a free ID and to tell when a tier is used up. Every tier prefix ends in
+ * its source digit (1-6), so `LIKE '<prefix>%'` on a 6-character value is
+ * exactly that tier's membership — e.g. '01%' cannot match '001234'.
+ */
+export async function findUserIdsWithPrefix(table: string, prefix: string): Promise<Set<string>> {
+  if (!KNOWN_TABLES.has(table)) {
+    throw new Error(`Refusing to query unrecognized table "${table}" — add it to KNOWN_TABLES in dbClient.ts once confirmed in SSMS.`);
+  }
+  if (!/^\d{1,5}$/.test(prefix)) {
+    throw new Error(`User_ID prefix must be 1-5 digits, got "${prefix}".`);
+  }
+  const pool = new sql.ConnectionPool(config());
+  try {
+    await withTimeout(pool.connect(), HARD_TIMEOUT_MS, `Connecting to ${table}`);
+    const result = await withTimeout(
+      pool
+        .request()
+        .input('pattern', sql.VarChar, `${prefix}%`)
+        .query(`SELECT DISTINCT User_ID FROM dbo.${table} WHERE User_ID LIKE @pattern`),
+      HARD_TIMEOUT_MS,
+      `Listing ${table} User_IDs starting ${prefix}`
+    );
+    return new Set(
+      result.recordset
+        .map((row) => String(row['User_ID'] ?? '').trim())
+        .filter((id) => /^\d{6}$/.test(id))
+    );
+  } finally {
+    await pool.close().catch(() => {});
+  }
+}

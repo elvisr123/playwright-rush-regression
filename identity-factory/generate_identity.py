@@ -223,6 +223,16 @@ def main() -> None:
             "employee ID. OneUp_Manager_Network_ID is left untouched."
         ),
     )
+    parser.add_argument(
+        "--user-id", nargs="+", default=None, dest="user_ids", metavar="SOURCE=ID",
+        help=(
+            "Use this exact 6-digit User_ID for a source instead of deriving a "
+            "tier-1 one from the number, e.g. --user-id rush=001234 copley=000256. "
+            "Must sit in one of that source's prefix tiers (rush 0001xx/001xxx/"
+            "01xxxx/1xxxxx, nerm 003xxx/03xxxx/3xxxxx, ...). The creation specs "
+            "pass a free one picked from the live My_Rush_Jobs table."
+        ),
+    )
     args = parser.parse_args()
 
     if args.accounts and (args.sources or args.lifecycle):
@@ -239,6 +249,18 @@ def main() -> None:
         accounts = [(source_key, args.lifecycle) for source_key in args.sources]
     else:
         parser.error("Provide either --sources plus --lifecycle, or --accounts SOURCE:LIFECYCLE ...")
+
+    user_ids: dict[str, str] = {}
+    for token in args.user_ids or []:
+        if "=" not in token:
+            parser.error(f'--user-id values must be SOURCE=ID (e.g. rush=001234), got "{token}".')
+        source_key, value = (part.strip() for part in token.split("=", 1))
+        if source_key not in SOURCES:
+            parser.error(f'--user-id: unknown source "{source_key}".')
+        user_ids[source_key] = value
+    extra = set(user_ids) - {source_key for source_key, _ in accounts}
+    if extra:
+        parser.error(f"--user-id given for source(s) not being generated: {', '.join(sorted(extra))}")
 
     if args.number and not (args.first and args.last):
         parser.error("--number requires --first and --last (the existing identity's exact name).")
@@ -271,6 +293,7 @@ def main() -> None:
         row = build_my_rush_jobs_row(
             source_key, key, number, first, last, lifecycle, birth_date, args.correlation_key, args.start_date,
             args.primary_position, args.oneup_manager_employee_id, args.end_date,
+            user_ids.get(source_key),
         )
         save_row(row)
         append_identity(lifecycle, row)

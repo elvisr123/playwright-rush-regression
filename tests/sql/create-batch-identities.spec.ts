@@ -11,6 +11,7 @@ import {
   isDbConfigured,
 } from '../helpers/dbClient';
 import { evaluateCheck } from '../helpers/expectedValueCheck';
+import { allocateUserIds, describeUserIdPicks, userIdMap } from '../helpers/userIdAllocator';
 import { SOURCES } from '../config/sources';
 import {
   BATCH_ROWS,
@@ -151,7 +152,11 @@ test('Create the 16-identity batch — INSERT + DB verify, no SSMS', async () =>
       // manager (copley = the 019811/jyates manager the user set on
       // 2026-11-06; the other sources still carry the 2026-10-29 test
       // manager until the user provides theirs).
-      const generated = runGenerator([batchRow.sourceKey], batchRow.lifecycle);
+      // Free User_ID from the live table, walking the prefix tiers when one
+      // is full (0001xx -> 001xxx -> 01xxxx -> 1xxxxx for rush, etc.).
+      const picks = await allocateUserIds(TABLE, [batchRow.sourceKey]);
+      console.log(`  User_ID: ${describeUserIdPicks(picks)}`);
+      const generated = runGenerator([batchRow.sourceKey], batchRow.lifecycle, { userIds: userIdMap(picks) });
       const row = generated.rows[0];
       if (!row) {
         failures.push({ sNo: batchRow.sNo, label, reason: 'generator returned no rows' });

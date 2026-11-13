@@ -6,6 +6,7 @@ import { runGenerator } from '../helpers/generatorClient';
 import { getStagingRow, findRowsByName, findRowsByUserId } from '../helpers/dbClient';
 import { isSailPointConfigured, aggregateSourceByName } from '../helpers/sailpointClient';
 import { evaluateCheck } from '../helpers/expectedValueCheck';
+import { allocateUserIds, describeUserIdPicks, userIdMap } from '../helpers/userIdAllocator';
 import { buildIdentityCreationReport, CreationAttributeRow } from '../helpers/buildReport';
 import { buildReportFileName, uploadFileToSharePointFolder, removeLocalReportCopy } from '../helpers/sharepointUpload';
 import { LifecycleState } from '../config/lifecycles';
@@ -223,7 +224,13 @@ test('Create identity — INSERT + verify via SSMS', async () => {
   fs.mkdirSync(outDir, { recursive: true });
 
   console.log(`Generating identity: sources=${SOURCES_TO_CREATE.join(',')} lifecycle=${LIFECYCLE}...`);
+  // Free User_ID per source from the live My_Rush_Jobs, moving to the next
+  // prefix tier only when the current one is full (rush 0001xx -> 001xxx ->
+  // 01xxxx -> 1xxxxx; the same leading-zero rule for every source).
+  const userIdPicks = await allocateUserIds('My_Rush_Jobs', SOURCES_TO_CREATE);
+  console.log(`User_IDs: ${describeUserIdPicks(userIdPicks)}`);
   const generated = runGenerator(SOURCES_TO_CREATE, LIFECYCLE, {
+    userIds: userIdMap(userIdPicks),
     first: FIRST,
     last: LAST,
     number: NUMBER,
@@ -289,12 +296,8 @@ test('Create identity — INSERT + verify via SSMS', async () => {
     if (userIdMatches.length > 0) {
       throw new Error(
         `User_ID "${dbUserId}" (${sourceName}, ${stageKey}) already exists in My_Rush_Jobs (Stage_Key(s): ` +
-          `${userIdMatches.map((r) => r['Stage_Key']).join(', ')}) — User_ID is a per-source prefix plus the ` +
-          `trailing digits of the generated number, so it can collide with an identity created weeks or months ` +
-          `ago even when Stage_Key/Correlation_Key are unique. Re-run to allocate a fresh number. Note the ` +
-          `prefix scheme leaves only 100 possible User_IDs for rush/copley and 1000 for the other sources, so ` +
-          `repeated collisions here mean that source's ID space is filling up, not bad luck — the prefix widths ` +
-          `in identity-factory/user_payload.py's SOURCES would need revisiting.`
+          `${userIdMatches.map((r) => r['Stage_Key']).join(', ')}). It was picked as free moments ago ` +
+          `(userIdAllocator), so someone else most likely INSERTed it in the meantime — just re-run.`
       );
     }
   }

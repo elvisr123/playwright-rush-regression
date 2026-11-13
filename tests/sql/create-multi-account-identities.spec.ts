@@ -11,6 +11,7 @@ import {
   isDbConfigured,
 } from '../helpers/dbClient';
 import { evaluateCheck } from '../helpers/expectedValueCheck';
+import { allocateUserIds, describeUserIdPicks, isInSourceTiers, userIdMap } from '../helpers/userIdAllocator';
 import { SOURCES } from '../config/sources';
 import {
   MULTI_ACCOUNT_SCENARIOS,
@@ -38,8 +39,8 @@ import {
 //     (what SailPoint correlates the two accounts on), Provider_National_ID
 //   per row — the source's own template (manager, one-up, department,
 //     location, job code, holds, Academic_Program/School for Ellucian…),
-//     Stage_Key prefix, source-prefixed User_ID (0001 rush, 0002 copley,
-//     003 nerm, 004 echo, 005 ellucian), and that account's own lifecycle
+//     Stage_Key prefix, a free source-prefixed User_ID from the live table
+//     (rush 0001xx -> 001xxx -> 01xxxx -> 1xxxxx, nerm 003xxx -> 03xxxx -> ...), and that account's own lifecycle
 //     Start_Date/End_Date/Status/IIQDisabled.
 // A scenario that breaks any of these is rejected BEFORE anything is INSERTed.
 //
@@ -73,21 +74,11 @@ const ACCOUNTS_TO_CREATE: MultiAccountSide[] = [
 const CREATE_ALL_SCENARIOS = false;
 // ---------------------------------------------------------------------------
 
-// Higher than the batch spec's 6: rush appears in 30 of these scenarios and
-// copley in 27, and each of those sources has only 100 possible User_IDs
-// (4-digit prefix + 2 random digits) across the project's whole history. A
-// collision is expected here; running out of attempts means the space is
-// nearly exhausted (see the failure message).
+// Regenerations allowed per scenario on a name/Stage_Key/User_ID collision.
+// User_IDs are picked free from the live table (userIdAllocator, walking the
+// prefix tiers 0001xx -> 001xxx -> 01xxxx -> 1xxxxx), so a User_ID collision
+// here only happens if someone else INSERTed the same ID in the meantime.
 const MAX_GENERATION_ATTEMPTS = 15;
-
-const USER_ID_PREFIX: Record<string, string> = {
-  rush: '0001',
-  copley: '0002',
-  nerm: '003',
-  echo: '004',
-  ellucian: '005',
-  workday: '006',
-};
 
 /** Fields that must be byte-for-byte identical on every row of one identity. */
 const SHARED_FIELDS = [
@@ -146,9 +137,8 @@ function ruleViolations(scenario: MultiAccountScenario, generated: GeneratedIden
       problems.push(`row ${i + 1} lifecycle ${r.lifecycle}, expected ${account.lifecycle}`);
     }
     const userId = r.row['User_ID'] ?? '';
-    const prefix = USER_ID_PREFIX[r.sourceKey];
-    if (!/^\d{6}$/.test(userId) || (prefix && !userId.startsWith(prefix))) {
-      problems.push(`${r.sourceKey} User_ID "${userId}" is not 6 digits starting with ${prefix}`);
+    if (!isInSourceTiers(r.sourceKey, userId)) {
+      problems.push(`${r.sourceKey} User_ID "${userId}" is not 6 digits in one of that source's prefix tiers`);
     }
   });
   for (const field of SHARED_FIELDS) {
@@ -218,7 +208,11 @@ test('Create multi-account identities — INSERT + DB verify, no SSMS', async ()
     for (let attempt = 1; attempt <= MAX_GENERATION_ATTEMPTS; attempt++) {
       // No date / Primary_Position / manager overrides: each account takes
       // its lifecycle's defaults and its source template's manager fields.
-      const candidate = runMultiAccountGenerator(scenario.accounts);
+      // Free User_IDs from the live table, one per source (tier walk:
+      // 0001xx -> 001xxx -> 01xxxx -> 1xxxxx for rush, likewise for the rest).
+      const picks = await allocateUserIds(TABLE, scenario.accounts.map((a) => a.sourceKey));
+      console.log(`  User_IDs: ${describeUserIdPicks(picks)}`);
+      const candidate = runMultiAccountGenerator(scenario.accounts, { userIds: userIdMap(picks) });
       const violations = ruleViolations(scenario, candidate);
       if (violations.length > 0) {
         // A rule violation is a code bug, not bad luck — don't retry it.
@@ -240,8 +234,7 @@ test('Create multi-account identities — INSERT + DB verify, no SSMS', async ()
         label,
         reason: lastProblem.startsWith('multi-account rule')
           ? lastProblem
-          : `no collision-free identity after ${MAX_GENERATION_ATTEMPTS} attempts — last: ${lastProblem}. ` +
-            `If this is a rush/copley User_ID, that source's 100-value ID space is nearly exhausted.`,
+          : `no collision-free identity after ${MAX_GENERATION_ATTEMPTS} attempts — last: ${lastProblem}.`,
       });
       continue;
     }
