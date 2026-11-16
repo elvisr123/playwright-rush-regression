@@ -3,13 +3,8 @@ import * as path from 'path';
 import { SourceKey, SOURCES } from './sources';
 
 /**
- * Two-account creation matrix from the user's Source1×Lifecycle1 /
- * Source2×Lifecycle2 table, with termed and inactive dropped.
- *
- * sNo matches the original table so a row here can be traced back. Pairings
- * that only existed as termed/inactive combinations are absent (no
- * renumbering). Ellucian has no prehire/futurehire rows in that table, and
- * Copley×NERM has no NERM futurehire rows — those gaps are kept.
+ * Two-account creation matrix: the user's full 205-row Source1×Lifecycle1 /
+ * Source2×Lifecycle2 table. sNo is the row number in that table.
  *
  * Each scenario is ONE identity with TWO My_Rush_Jobs rows:
  *   shared  — name, Birth_Date, 12-digit number, Correlation_Key
@@ -17,145 +12,112 @@ import { SourceKey, SOURCES } from './sources';
  *             source-prefixed User_ID, and that account's own lifecycle
  *             dates/Status/IIQDisabled
  *
- * Correlation_Key is what SailPoint joins the two accounts on. User_ID is
- * deliberately different per source (see source_user_id() in
- * identity-factory/user_payload.py).
+ * Termed / inactive (2026-11-16, user-requested): "rest of the scenarios with
+ * inactive or termed LC state in them should be created as active and then I
+ * will update the LC to termed/inactive respectively". So a termed or
+ * inactive account is GENERATED as active (createAs()) and the user changes
+ * its lifecycle by hand afterwards; the scenario keeps the table's lifecycle
+ * so the manifest and the console say which account needs that change.
+ *
+ * The 63 scenarios with no termed/inactive account were created first
+ * (2026-11-13); the other 142 are TERMED_INACTIVE_SCENARIOS.
  */
-export const MULTI_ACCOUNT_LIFECYCLES = ['active', 'prehire', 'futurehire'] as const;
+export const MULTI_ACCOUNT_LIFECYCLES = ['active', 'prehire', 'futurehire', 'termed', 'inactive'] as const;
 export type MultiAccountLifecycle = (typeof MULTI_ACCOUNT_LIFECYCLES)[number];
+/** What the generator actually creates — never termed/inactive. */
+export type CreatedLifecycle = 'active' | 'prehire' | 'futurehire';
+
+/** Lifecycles the user sets by hand after creation; the account is created active. */
+export const MANUAL_LIFECYCLES: readonly MultiAccountLifecycle[] = ['termed', 'inactive'];
+
+export function createAs(lifecycle: MultiAccountLifecycle): CreatedLifecycle {
+  return lifecycle === 'termed' || lifecycle === 'inactive' ? 'active' : lifecycle;
+}
+
+export function needsManualUpdate(lifecycle: MultiAccountLifecycle): boolean {
+  return MANUAL_LIFECYCLES.includes(lifecycle);
+}
 
 export interface MultiAccountSide {
   sourceKey: SourceKey;
+  /** The table's lifecycle. termed/inactive are created as active — see createAs(). */
   lifecycle: MultiAccountLifecycle;
 }
 
 export interface MultiAccountScenario {
-  /** Original table row number (gaps are termed/inactive that were excluded). */
+  /** Row number in the user's 205-row table. */
   sNo: number;
   accounts: [MultiAccountSide, MultiAccountSide];
 }
 
-function s(
-  sNo: number,
-  source1: SourceKey,
-  lifecycle1: MultiAccountLifecycle,
-  source2: SourceKey,
-  lifecycle2: MultiAccountLifecycle
-): MultiAccountScenario {
-  return {
-    sNo,
-    accounts: [
-      { sourceKey: source1, lifecycle: lifecycle1 },
-      { sourceKey: source2, lifecycle: lifecycle2 },
-    ],
-  };
-}
+// The table is ten source-pair blocks in this order. Within a block, Source 1
+// runs active, prehire, futurehire, termed, inactive and Source 2 runs through
+// its own list inside each. Ellucian only has active/termed/inactive, and
+// Copley × NERM has no NERM futurehire — both exactly as in the table, which
+// is how the blocks come to 25/15/20 rows.
+const ALL = ['active', 'prehire', 'futurehire', 'termed', 'inactive'] as const;
+const ELLUCIAN = ['active', 'termed', 'inactive'] as const;
+const NERM_WITH_COPLEY = ['active', 'prehire', 'termed', 'inactive'] as const;
 
-export const MULTI_ACCOUNT_SCENARIOS: MultiAccountScenario[] = [
-  // Rush Lawson × Copley Lawson (original 1–25)
-  s(1, 'rush', 'active', 'copley', 'active'),
-  s(2, 'rush', 'active', 'copley', 'prehire'),
-  s(3, 'rush', 'active', 'copley', 'futurehire'),
-  s(6, 'rush', 'prehire', 'copley', 'active'),
-  s(7, 'rush', 'prehire', 'copley', 'prehire'),
-  s(8, 'rush', 'prehire', 'copley', 'futurehire'),
-  s(11, 'rush', 'futurehire', 'copley', 'active'),
-  s(12, 'rush', 'futurehire', 'copley', 'prehire'),
-  s(13, 'rush', 'futurehire', 'copley', 'futurehire'),
-
-  // Rush Lawson × Non-Employee Workforce (original 26–50)
-  s(26, 'rush', 'active', 'nerm', 'active'),
-  s(27, 'rush', 'active', 'nerm', 'prehire'),
-  s(28, 'rush', 'active', 'nerm', 'futurehire'),
-  s(31, 'rush', 'prehire', 'nerm', 'active'),
-  s(32, 'rush', 'prehire', 'nerm', 'prehire'),
-  s(33, 'rush', 'prehire', 'nerm', 'futurehire'),
-  s(36, 'rush', 'futurehire', 'nerm', 'active'),
-  s(37, 'rush', 'futurehire', 'nerm', 'prehire'),
-  s(38, 'rush', 'futurehire', 'nerm', 'futurehire'),
-
-  // Rush Lawson × ECHO (original 51–75)
-  s(51, 'rush', 'active', 'echo', 'active'),
-  s(52, 'rush', 'active', 'echo', 'prehire'),
-  s(53, 'rush', 'active', 'echo', 'futurehire'),
-  s(56, 'rush', 'prehire', 'echo', 'active'),
-  s(57, 'rush', 'prehire', 'echo', 'prehire'),
-  s(58, 'rush', 'prehire', 'echo', 'futurehire'),
-  s(61, 'rush', 'futurehire', 'echo', 'active'),
-  s(62, 'rush', 'futurehire', 'echo', 'prehire'),
-  s(63, 'rush', 'futurehire', 'echo', 'futurehire'),
-
-  // Rush Lawson × Ellucian — Ellucian only has Active in the source table (76–90)
-  s(76, 'rush', 'active', 'ellucian', 'active'),
-  s(79, 'rush', 'prehire', 'ellucian', 'active'),
-  s(82, 'rush', 'futurehire', 'ellucian', 'active'),
-
-  // Copley Lawson × Non-Employee — no NERM futurehire rows in the source table (91–110)
-  s(91, 'copley', 'active', 'nerm', 'active'),
-  s(92, 'copley', 'active', 'nerm', 'prehire'),
-  s(95, 'copley', 'prehire', 'nerm', 'active'),
-  s(96, 'copley', 'prehire', 'nerm', 'prehire'),
-  s(99, 'copley', 'futurehire', 'nerm', 'active'),
-  s(100, 'copley', 'futurehire', 'nerm', 'prehire'),
-
-  // Copley Lawson × ECHO (original 111–135)
-  s(111, 'copley', 'active', 'echo', 'active'),
-  s(112, 'copley', 'active', 'echo', 'prehire'),
-  s(113, 'copley', 'active', 'echo', 'futurehire'),
-  s(116, 'copley', 'prehire', 'echo', 'active'),
-  s(117, 'copley', 'prehire', 'echo', 'prehire'),
-  s(118, 'copley', 'prehire', 'echo', 'futurehire'),
-  s(121, 'copley', 'futurehire', 'echo', 'active'),
-  s(122, 'copley', 'futurehire', 'echo', 'prehire'),
-  s(123, 'copley', 'futurehire', 'echo', 'futurehire'),
-
-  // Copley Lawson × Ellucian (original 136–150)
-  s(136, 'copley', 'active', 'ellucian', 'active'),
-  s(139, 'copley', 'prehire', 'ellucian', 'active'),
-  s(142, 'copley', 'futurehire', 'ellucian', 'active'),
-
-  // Non-Employee × ECHO (original 151–175)
-  s(151, 'nerm', 'active', 'echo', 'active'),
-  s(152, 'nerm', 'active', 'echo', 'prehire'),
-  s(153, 'nerm', 'active', 'echo', 'futurehire'),
-  s(156, 'nerm', 'prehire', 'echo', 'active'),
-  s(157, 'nerm', 'prehire', 'echo', 'prehire'),
-  s(158, 'nerm', 'prehire', 'echo', 'futurehire'),
-  s(161, 'nerm', 'futurehire', 'echo', 'active'),
-  s(162, 'nerm', 'futurehire', 'echo', 'prehire'),
-  s(163, 'nerm', 'futurehire', 'echo', 'futurehire'),
-
-  // Non-Employee × Ellucian (original 176–190)
-  s(176, 'nerm', 'active', 'ellucian', 'active'),
-  s(179, 'nerm', 'prehire', 'ellucian', 'active'),
-  s(182, 'nerm', 'futurehire', 'ellucian', 'active'),
-
-  // ECHO × Ellucian (original 191–205)
-  s(191, 'echo', 'active', 'ellucian', 'active'),
-  s(194, 'echo', 'prehire', 'ellucian', 'active'),
-  s(197, 'echo', 'futurehire', 'ellucian', 'active'),
+const BLOCKS: [SourceKey, SourceKey, readonly MultiAccountLifecycle[]][] = [
+  ['rush', 'copley', ALL], // 1–25
+  ['rush', 'nerm', ALL], // 26–50
+  ['rush', 'echo', ALL], // 51–75
+  ['rush', 'ellucian', ELLUCIAN], // 76–90
+  ['copley', 'nerm', NERM_WITH_COPLEY], // 91–110
+  ['copley', 'echo', ALL], // 111–135
+  ['copley', 'ellucian', ELLUCIAN], // 136–150
+  ['nerm', 'echo', ALL], // 151–175
+  ['nerm', 'ellucian', ELLUCIAN], // 176–190
+  ['echo', 'ellucian', ELLUCIAN], // 191–205
 ];
 
+function buildScenarios(): MultiAccountScenario[] {
+  const out: MultiAccountScenario[] = [];
+  for (const [source1, source2, lifecycles2] of BLOCKS) {
+    for (const lifecycle1 of ALL) {
+      for (const lifecycle2 of lifecycles2) {
+        out.push({
+          sNo: out.length + 1,
+          accounts: [
+            { sourceKey: source1, lifecycle: lifecycle1 },
+            { sourceKey: source2, lifecycle: lifecycle2 },
+          ],
+        });
+      }
+    }
+  }
+  if (out.length !== 205) throw new Error(`multi-account table built ${out.length} rows, expected 205`);
+  return out;
+}
+
+/** All 205 rows of the table. */
+export const MULTI_ACCOUNT_SCENARIOS: MultiAccountScenario[] = buildScenarios();
+
+/** The 142 rows with a termed or inactive account (created as active, updated by hand). */
+export const TERMED_INACTIVE_SCENARIOS: MultiAccountScenario[] = MULTI_ACCOUNT_SCENARIOS.filter((s) =>
+  s.accounts.some((a) => needsManualUpdate(a.lifecycle))
+);
+
 export function scenarioLabel(scenario: MultiAccountScenario): string {
-  const [a, b] = scenario.accounts;
-  return `${SOURCES[a.sourceKey]} ${a.lifecycle} + ${SOURCES[b.sourceKey]} ${b.lifecycle}`;
+  const side = (a: MultiAccountSide) =>
+    `${SOURCES[a.sourceKey]} ${a.lifecycle}` + (needsManualUpdate(a.lifecycle) ? ' (created active)' : '');
+  return scenario.accounts.map(side).join(' + ');
 }
 
 export function findMultiAccountScenario(sNo: number): MultiAccountScenario {
   const found = MULTI_ACCOUNT_SCENARIOS.find((row) => row.sNo === sNo);
-  if (!found) {
-    throw new Error(
-      `No multi-account scenario with sNo ${sNo}. Valid numbers: ` +
-        MULTI_ACCOUNT_SCENARIOS.map((row) => row.sNo).join(', ')
-    );
-  }
+  if (!found) throw new Error(`No multi-account scenario with sNo ${sNo} (valid: 1–205).`);
   return found;
 }
 
 export interface MultiAccountManifestAccount {
   sourceKey: SourceKey;
   sourceName: string;
+  /** The table's lifecycle — what this account should end up as. */
   lifecycle: MultiAccountLifecycle;
+  /** What was actually INSERTed; differs from lifecycle for termed/inactive. Absent on older entries. */
+  createdAs?: CreatedLifecycle;
   stageKey: string;
   userId: string;
 }
@@ -196,13 +158,17 @@ export function writeMultiAccountManifest(manifest: MultiAccountManifest): strin
   return resolved;
 }
 
-export function formatMultiAccountTable(entries: MultiAccountManifestEntry[]): string {
+/** Table of the given scenarios (default: all 205) with their Stage_Keys from the manifest. */
+export function formatMultiAccountTable(
+  entries: MultiAccountManifestEntry[],
+  scenarios: MultiAccountScenario[] = MULTI_ACCOUNT_SCENARIOS
+): string {
   const bySNo = new Map(entries.map((e) => [e.sNo, e]));
   const lines = [
     'sNo   Source 1                        L1           Source 2                        L2           Stage Keys',
     '----  ------------------------------  -----------  ------------------------------  -----------  --------------------------------',
   ];
-  for (const scenario of MULTI_ACCOUNT_SCENARIOS) {
+  for (const scenario of scenarios) {
     const [a, b] = scenario.accounts;
     const entry = bySNo.get(scenario.sNo);
     const keys = entry

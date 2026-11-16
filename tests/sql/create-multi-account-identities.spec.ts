@@ -22,6 +22,9 @@ import {
   MultiAccountManifestEntry,
   MultiAccountScenario,
   MultiAccountSide,
+  TERMED_INACTIVE_SCENARIOS,
+  createAs,
+  needsManualUpdate,
   readMultiAccountManifest,
   writeMultiAccountManifest,
   formatMultiAccountTable,
@@ -29,9 +32,11 @@ import {
 } from '../config/multiAccountScenarios';
 
 // Creates the two-account identities in tests/config/multiAccountScenarios.ts
-// (the user's Source1×Lifecycle1 / Source2×Lifecycle2 table, termed and
-// inactive excluded — 63 scenarios). Each scenario = ONE identity with TWO
-// My_Rush_Jobs rows, one per source, each in its own lifecycle.
+// (the user's full 205-row Source1×Lifecycle1 / Source2×Lifecycle2 table).
+// Each scenario = ONE identity with TWO My_Rush_Jobs rows, one per source,
+// each in its own lifecycle. A termed or inactive account is created as
+// ACTIVE and its lifecycle is changed by hand afterwards (user's choice,
+// 2026-11-16) — the run ends with the list of Stage_Keys to change.
 //
 //   npx playwright test tests/sql/create-multi-account-identities.spec.ts
 //   (list the pairs in IDENTITIES_TO_CREATE below; npm run multi:create is the same command)
@@ -65,16 +70,23 @@ const TABLE = 'My_Rush_Jobs';
 // spec again creates new ones again (no skipping in this mode).
 //
 // sourceKey: 'rush' | 'copley' | 'nerm' | 'echo' | 'ellucian'
-// lifecycle: 'active' | 'prehire' | 'futurehire'
-// (Ellucian is active-only, and Copley + NERM has no NERM futurehire, as in
-// the scenario table — an unsupported pair fails with the list of valid ones,
-// and every pair is checked before anything is created.)
+// lifecycle: 'active' | 'prehire' | 'futurehire' | 'termed' | 'inactive'
+//   termed / inactive are CREATED AS ACTIVE — change them by hand afterwards.
+// (Ellucian is active/termed/inactive only, and Copley + NERM has no NERM
+// futurehire, as in the scenario table — an unsupported pair fails with the
+// list of valid ones, and every pair is checked before anything is created.)
 const IDENTITIES_TO_CREATE: MultiAccountSide[][] = [
   [{ sourceKey: 'rush', lifecycle: 'active' }, { sourceKey: 'copley', lifecycle: 'prehire' }],
 ];
 
-// true = ignore IDENTITIES_TO_CREATE and create all 63 scenarios in one go
-// (resumable: scenarios already in temp/multi_account_manifest.json are skipped).
+// Bulk modes — each ignores IDENTITIES_TO_CREATE. Resumable: scenarios
+// already in temp/multi_account_manifest.json are skipped, so an interrupted
+// run picks up where it stopped. If both are true, CREATE_ALL_SCENARIOS wins.
+//
+// true = the 142 scenarios with a termed or inactive account (every
+// termed/inactive account created as active, for you to update by hand).
+const CREATE_ALL_TERMED_INACTIVE = false;
+// true = all 205 scenarios.
 const CREATE_ALL_SCENARIOS = false;
 
 // true = do it like create-and-insert-identity.spec.ts: run each account's
@@ -85,6 +97,8 @@ const CREATE_ALL_SCENARIOS = false;
 // already be open and connected. Takes a few minutes per account (2 per
 // identity) and opens 2 query tabs per account — close old tabs first.
 // false = fast: INSERT straight over the DB connection, no screenshots/report.
+// For a big bulk run (142 identities = 284 accounts) SSMS means many hours
+// and hundreds of query tabs — false is the practical choice there.
 const USE_SSMS = true;
 // ---------------------------------------------------------------------------
 
@@ -112,7 +126,7 @@ interface ScenarioFailure {
 
 /**
  * The scenario matching one IDENTITIES_TO_CREATE entry, in either order. Must
- * be one of the 63 rows in tests/config/multiAccountScenarios.ts, so a typo'd
+ * be one of the 205 rows in tests/config/multiAccountScenarios.ts, so a typo'd
  * source or an unsupported combination (e.g. Ellucian prehire) fails before
  * anything is generated.
  */
@@ -136,8 +150,16 @@ function scenarioForAccounts(accounts: MultiAccountSide[], index: number): Multi
 
 function selectedScenarios(): MultiAccountScenario[] {
   if (CREATE_ALL_SCENARIOS) return MULTI_ACCOUNT_SCENARIOS;
+  if (CREATE_ALL_TERMED_INACTIVE) return TERMED_INACTIVE_SCENARIOS;
   if (IDENTITIES_TO_CREATE.length === 0) throw new Error('IDENTITIES_TO_CREATE is empty — list at least one pair.');
   return IDENTITIES_TO_CREATE.map((accounts, i) => scenarioForAccounts(accounts, i));
+}
+
+const bulkMode = CREATE_ALL_SCENARIOS || CREATE_ALL_TERMED_INACTIVE;
+
+/** Lifecycle line for the Word report: "termed (created as active — update manually)". */
+function lifecycleNote(lifecycle: MultiAccountSide['lifecycle']): string {
+  return needsManualUpdate(lifecycle) ? `${lifecycle} (created as active — update manually)` : lifecycle;
 }
 
 /** Multi-account rule violations on a freshly generated identity (empty = OK). */
@@ -150,8 +172,8 @@ function ruleViolations(scenario: MultiAccountScenario, generated: GeneratedIden
   scenario.accounts.forEach((account, i) => {
     const r = rows[i];
     if (r.sourceKey !== account.sourceKey) problems.push(`row ${i + 1} is ${r.sourceKey}, expected ${account.sourceKey}`);
-    if (r.lifecycle && r.lifecycle !== account.lifecycle) {
-      problems.push(`row ${i + 1} lifecycle ${r.lifecycle}, expected ${account.lifecycle}`);
+    if (r.lifecycle && r.lifecycle !== createAs(account.lifecycle)) {
+      problems.push(`row ${i + 1} lifecycle ${r.lifecycle}, expected ${createAs(account.lifecycle)}`);
     }
     const userId = r.row['User_ID'] ?? '';
     if (!isInSourceTiers(r.sourceKey, userId)) {
@@ -239,12 +261,13 @@ test('Create multi-account identities — INSERT + DB verify', async () => {
   const existing = readMultiAccountManifest();
   const entries: MultiAccountManifestEntry[] = existing?.entries ? [...existing.entries] : [];
   const failures: ScenarioFailure[] = [];
+  const createdThisRun: MultiAccountManifestEntry[] = [];
 
   for (const scenario of scenarios) {
     const label = scenarioLabel(scenario);
     // Resume only applies to the all-scenarios run; a hand-picked pair always
     // creates a new identity, like the single-account spec.
-    if (CREATE_ALL_SCENARIOS && entries.some((e) => e.sNo === scenario.sNo)) {
+    if (bulkMode && entries.some((e) => e.sNo === scenario.sNo)) {
       console.log(`\n--- S.No ${scenario.sNo}: ${label} — already in manifest, skipping ---`);
       continue;
     }
@@ -259,7 +282,12 @@ test('Create multi-account identities — INSERT + DB verify', async () => {
       // 0001xx -> 001xxx -> 01xxxx -> 1xxxxx for rush, likewise for the rest).
       const picks = await allocateUserIds(TABLE, scenario.accounts.map((a) => a.sourceKey));
       console.log(`  User_IDs: ${describeUserIdPicks(picks)}`);
-      const candidate = runMultiAccountGenerator(scenario.accounts, { userIds: userIdMap(picks) });
+      // termed/inactive accounts are generated as active (createAs) — the
+      // user changes their lifecycle by hand after creation.
+      const candidate = runMultiAccountGenerator(
+        scenario.accounts.map((a) => ({ sourceKey: a.sourceKey, lifecycle: createAs(a.lifecycle) })),
+        { userIds: userIdMap(picks) }
+      );
       const violations = ruleViolations(scenario, candidate);
       if (violations.length > 0) {
         // A rule violation is a code bug, not bad luck — don't retry it.
@@ -345,7 +373,7 @@ test('Create multi-account identities — INSERT + DB verify', async () => {
             identityName: `${generated.firstName} ${generated.lastName}`,
             stageKey: r.stageKey,
             sourceName: r.sourceName,
-            lifecycle: r.lifecycle ?? '',
+            lifecycle: lifecycleNote(scenario.accounts[generated.rows.indexOf(r)].lifecycle),
           },
           insertScreenshot,
           selectScreenshot,
@@ -394,23 +422,36 @@ test('Create multi-account identities — INSERT + DB verify', async () => {
         sourceKey: scenario.accounts[i].sourceKey,
         sourceName: SOURCES[scenario.accounts[i].sourceKey],
         lifecycle: scenario.accounts[i].lifecycle,
+        createdAs: createAs(scenario.accounts[i].lifecycle),
         stageKey: r.stageKey,
         userId: String(r.row['User_ID'] ?? ''),
       })),
       dbVerified: allVerified,
     });
+    createdThisRun.push(entries[entries.length - 1]);
     writeMultiAccountManifest({ createdAt: new Date().toISOString(), entries });
   }
 
   const manifestPath = writeMultiAccountManifest({ createdAt: new Date().toISOString(), entries });
   console.log(`\n${'='.repeat(78)}\nManifest: ${manifestPath} (${MULTI_ACCOUNT_MANIFEST_PATH})\n${'='.repeat(78)}`);
-  console.log(formatMultiAccountTable(entries));
-  const sourcesToAggregate = [...new Set(entries.flatMap((e) => e.accounts.map((a) => a.sourceName)))];
+  console.log(formatMultiAccountTable(entries, scenarios));
+  const sourcesToAggregate = [...new Set(createdThisRun.flatMap((e) => e.accounts.map((a) => a.sourceName)))];
   console.log(
     `\nNEXT — aggregate manually in the sandbox (Admin > Sources > [source] > Import/Aggregate):\n` +
       sourcesToAggregate.map((s) => `  - ${s}`).join('\n') +
       `\nThen check each identity shows BOTH accounts correlated on one identity cube.`
   );
+  const manual = createdThisRun.flatMap((e) =>
+    e.accounts
+      .filter((a) => needsManualUpdate(a.lifecycle))
+      .map((a) => `  S.No ${String(e.sNo).padEnd(4)} ${a.stageKey.padEnd(24)} ${a.sourceName.padEnd(28)} active -> ${a.lifecycle}`)
+  );
+  if (manual.length > 0) {
+    console.log(
+      `\nMANUAL LIFECYCLE UPDATE — these ${manual.length} account(s) were created ACTIVE; ` +
+        `change each to the lifecycle shown:\n` + manual.join('\n')
+    );
+  }
 
   expect(
     failures,
