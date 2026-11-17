@@ -14,7 +14,7 @@ import { evaluateCheck } from '../helpers/expectedValueCheck';
 import { allocateUserIds, describeUserIdPicks, userIdMap } from '../helpers/userIdAllocator';
 import { SOURCES } from '../config/sources';
 import {
-  BATCH_ROWS,
+  ROWS_TO_CREATE,
   BatchManifest,
   BatchManifestEntry,
   BATCH_MANIFEST_PATH,
@@ -100,7 +100,7 @@ test('Create the 16-identity batch — INSERT + DB verify, no SSMS', async () =>
   // Pre-flight: prove the DB account can INSERT before generating anything.
   // A read-only grant is the one failure mode that would otherwise waste a
   // full pass over all 16 rows, and it is invisible until the first write.
-  const probeKey = `BATCH-PROBE-${BATCH_ROWS.length}-ROWS`;
+  const probeKey = `BATCH-PROBE-${ROWS_TO_CREATE.length}-ROWS`;
   const probe = await canInsert(TABLE, probeKey);
   console.log(`INSERT pre-flight: ${probe.verdict} — ${probe.detail}`);
   expect(
@@ -123,13 +123,13 @@ test('Create the 16-identity batch — INSERT + DB verify, no SSMS', async () =>
   const entries: BatchManifestEntry[] = existing?.entries ? [...existing.entries] : [];
   if (entries.length > 0) {
     console.log(
-      `Resuming — ${entries.length} of ${BATCH_ROWS.length} row(s) already in ${BATCH_MANIFEST_PATH}; those are skipped.`
+      `Resuming — ${entries.length} of ${ROWS_TO_CREATE.length} row(s) already in ${BATCH_MANIFEST_PATH}; those are skipped.`
     );
   }
 
   const failures: RowFailure[] = [];
 
-  for (const batchRow of BATCH_ROWS) {
+  for (const batchRow of ROWS_TO_CREATE) {
     const sourceName = SOURCES[batchRow.sourceKey];
     const label = `${sourceName} ${batchRow.lifecycle}`;
 
@@ -277,7 +277,7 @@ test('Create the 16-identity batch — INSERT + DB verify, no SSMS', async () =>
   const manifestPath = writeBatchManifest({ createdAt: new Date().toISOString(), entries });
 
   console.log(`\n${'='.repeat(78)}`);
-  console.log(`Batch created ${entries.length} of ${BATCH_ROWS.length} identities.`);
+  console.log(`Batch created ${entries.length} of ${ROWS_TO_CREATE.length} identities.`);
   console.log(`Manifest: ${manifestPath}`);
   console.log(`${'='.repeat(78)}\n`);
   console.log(formatBatchTable(entries));
@@ -297,7 +297,7 @@ test('Create the 16-identity batch — INSERT + DB verify, no SSMS', async () =>
   // the other 15 created, manifested and documentable.
   expect(
     failures,
-    `${failures.length} of ${BATCH_ROWS.length} batch row(s) did not come out clean:\n` +
+    `${failures.length} of ${ROWS_TO_CREATE.length} batch row(s) did not come out clean:\n` +
       failures.map((f) => `  S.No ${f.sNo} ${f.label}: ${f.reason}`).join('\n')
   ).toEqual([]);
 });

@@ -418,6 +418,16 @@ User supplied a 205-row Source1×Lifecycle1 / Source2×Lifecycle2 table and aske
 - Both rows keep their template `Primary_Position="YES"` (no rule in the repo says otherwise for multi-account).
 - Verified offline: all 63 build rule-clean rows; `npx tsc --noEmit` clean; spec lists under `sql-tools`. **Not live-tested** — needs the VDI.
 
+## Single-account creation list — `ROWS_TO_CREATE` (2026-11-17)
+
+`npm run batch:create` (`tests/sql/create-batch-identities.spec.ts`) now iterates **`ROWS_TO_CREATE`** in `tests/config/batch.ts`, a hand-edited list, instead of the historical 16-row `BATCH_ROWS`. `BATCH_ROWS` is unchanged and still backs `ROWS_TO_DOCUMENT` / `DOCUMENTED_BY_TEAMMATE` for the 2026-11-06 batch.
+
+Current contents (requested 2026-11-17): Copley/RUSH/NERM/ECHO at `prehire`, the same four at `active`, and Ellucian `active` — 9 identities, one per row, each its own name/number/Stage_Key.
+
+- **The manifest must be moved aside first.** The spec skips a row when `temp/batch_manifest.json` already holds that **source+lifecycle** pair — not by `sNo`. The 2026-11-06 manifest on the VDI contains every one of these nine pairs, so running against it creates nothing and prints nine "already created, skipping" lines. Rename it (e.g. `batch_manifest_2026-11-06.json`) before the run; `temp/` is gitignored, so this is a VDI-local step. The run then writes a fresh manifest holding only the new nine — which is also what `batch:upload-reports` and `batch:document` would then read.
+- Creation is **VDI-only**: `My_Rush_Jobs` lives on `RUTWV-IGADB01.rushtst.com`, which does not resolve off the VDI. Commit and push on the Mac, pull on the VDI, run there.
+- Aggregation stays manual, as always.
+
 ## Multi-account evidence reports — `Lifecycle_State_<No.>.docx` (2026-11-16/17)
 
 `tests/sources/multi-account/document.spec.ts` documents ONE two-account identity per run and uploads `Lifecycle_State_<No.>.docx` (zero-padded to 3) to `Enhancement_Nov_18_2026/Evidence_Nov_18/Lifecycle_State`.

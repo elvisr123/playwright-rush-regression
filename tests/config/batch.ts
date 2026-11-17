@@ -52,6 +52,31 @@ export const BATCH_ROWS: BatchRow[] = [
   { sNo: 16, sourceKey: 'ellucian', lifecycle: 'active' },
 ];
 
+// The 9 single-account identities requested 2026-11-17 ("i need to make
+// these 9 users on vdi"): four sources at prehire, four at active, plus
+// Ellucian active. These are what `npm run batch:create` actually creates —
+// BATCH_ROWS above stays as the 2026-11-06 table that ROWS_TO_DOCUMENT and
+// DOCUMENTED_BY_TEAMMATE are written against.
+//
+// Hand-edit this list for the next request, same convention as the other
+// creation specs.
+//
+// NOTE on resuming: create-batch-identities skips a row when the manifest
+// already holds that source+lifecycle pair — NOT by sNo. The 2026-11-06
+// manifest on the VDI contains all nine of these pairs, so it must be moved
+// aside first or every row is skipped as already-created. See AGENTS.md.
+export const ROWS_TO_CREATE: BatchRow[] = [
+  { sNo: 1, sourceKey: 'copley', lifecycle: 'prehire' },
+  { sNo: 2, sourceKey: 'rush', lifecycle: 'prehire' },
+  { sNo: 3, sourceKey: 'nerm', lifecycle: 'prehire' },
+  { sNo: 4, sourceKey: 'echo', lifecycle: 'prehire' },
+  { sNo: 5, sourceKey: 'copley', lifecycle: 'active' },
+  { sNo: 6, sourceKey: 'rush', lifecycle: 'active' },
+  { sNo: 7, sourceKey: 'nerm', lifecycle: 'active' },
+  { sNo: 8, sourceKey: 'echo', lifecycle: 'active' },
+  { sNo: 9, sourceKey: 'ellucian', lifecycle: 'active' },
+];
+
 // Which rows `npm run batch:document` covers.
 //
 // RUSH (4-7) and NERM (8-11) only, decided 2026-11-06. A teammate had
