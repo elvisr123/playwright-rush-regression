@@ -128,6 +128,8 @@ test('Create the 16-identity batch — INSERT + DB verify, no SSMS', async () =>
   }
 
   const failures: RowFailure[] = [];
+  const skipped: string[] = [];
+  const startingEntryCount = entries.length;
 
   for (const batchRow of ROWS_TO_CREATE) {
     const sourceName = SOURCES[batchRow.sourceKey];
@@ -135,6 +137,7 @@ test('Create the 16-identity batch — INSERT + DB verify, no SSMS', async () =>
 
     if (entries.some((e) => e.sourceKey === batchRow.sourceKey && e.lifecycle === batchRow.lifecycle)) {
       console.log(`\n--- S.No ${batchRow.sNo}: ${label} — already created, skipping ---`);
+      skipped.push(`S.No ${batchRow.sNo} ${label}`);
       continue;
     }
 
@@ -272,6 +275,24 @@ test('Create the 16-identity batch — INSERT + DB verify, no SSMS', async () =>
         reason: `no collision-free identity after ${MAX_GENERATION_ATTEMPTS} attempts — last: ${lastCollision}`,
       });
     }
+  }
+
+  // Every row skipped means this run created nothing at all. That used to
+  // exit green with a table of someone else's identities, which reads as
+  // success — hit live on 2026-11-17, when all 9 requested rows matched
+  // source+lifecycle pairs already in the 2026-11-06 manifest. The guard is
+  // per-pair, not per-sNo, so a new list of familiar pairs is indistinguishable
+  // from a resumed run; the manifest has to be moved aside deliberately.
+  if (entries.length === startingEntryCount && skipped.length === ROWS_TO_CREATE.length) {
+    throw new Error(
+      `Nothing was created — all ${skipped.length} row(s) in ROWS_TO_CREATE already exist in ${BATCH_MANIFEST_PATH} ` +
+        `as source+lifecycle pairs:\n` +
+        skipped.map((s) => `  ${s}`).join('\n') +
+        `\n\nThat manifest is from an earlier batch. To create these as NEW identities, move it aside first:\n` +
+        `  move ${BATCH_MANIFEST_PATH} temp\\batch_manifest_previous.json\n` +
+        `then re-run. The new run writes a fresh manifest holding only these rows.\n` +
+        `(Resuming an interrupted run of THIS list is the case the skip is for — leave the manifest alone for that.)`
+    );
   }
 
   const manifestPath = writeBatchManifest({ createdAt: new Date().toISOString(), entries });
