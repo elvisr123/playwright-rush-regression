@@ -9,7 +9,8 @@
     "batch:document": "playwright test --workers=1 tests/sources/rush-lawson/processing.spec.ts tests/sources/rush-lawson/futurehire.spec.ts tests/sources/rush-lawson/prehire.spec.ts tests/sources/rush-lawson/active.spec.ts tests/sources/nerm/processing.spec.ts tests/sources/nerm/futurehire.spec.ts tests/sources/nerm/prehire.spec.ts tests/sources/nerm/active.spec.ts",
     "batch:repair-managers": "playwright test tests/sql/repair-batch-managers.spec.ts",
     "batch:upload-reports": "playwright test tests/sql/upload-pending-reports.spec.ts",
-    "multi:create": "playwright test tests/sql/create-multi-account-identities.spec.ts"
+    "multi:create": "playwright test tests/sql/create-multi-account-identities.spec.ts",
+    "lifecycle:upload-reports": "playwright test tests/sql/upload-lifecycle-reports.spec.ts"
   },
   "keywords": [],
   "author": "",

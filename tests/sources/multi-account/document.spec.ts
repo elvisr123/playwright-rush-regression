@@ -31,12 +31,14 @@ import { findMultiAccountScenario } from '../../config/multiAccountScenarios';
 //   npx playwright test tests/sources/multi-account/document.spec.ts --headed
 
 // EDIT HERE: the scenario's No. (report is saved as Lifecycle_State_<No.>) and its two Stage_Keys.
-const S_NO = 13;
-const STAGE_KEYS = ['RL-9001179459244013ER', 'CL-9001179459244013ER'];
+const S_NO = 50;
+const STAGE_KEYS = ['RL-9001179484829178ER', 'NE-9001179484829178ER'];
 // Text after "Use Case:". Empty = the scenario's sources and lifecycles from the table.
 const USE_CASE = '';
 
+// SHAREPOINT_FOLDER_URL in .env wins; the path below is the fallback.
 const UPLOAD_FOLDER_URL =
+  process.env.SHAREPOINT_FOLDER_URL?.trim() ||
   'https://netorgft1314491.sharepoint.com/sites/AsbRushISC/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FAsbRushISC%2FShared%20Documents%2FASB%2FRush%5FTestCases%2FEnhancement%5FNov%5F18%5F2026%2FEvidence%5FNov%5F18%2FLifecycle%5FState';
 
 const PREFIX_TO_SOURCE: Record<string, SourceKey> = {
@@ -154,6 +156,28 @@ function image(path: string): Paragraph {
   });
 }
 
+/** Admin -> Sources -> <source>. The Sources click can land before the nav is ready, leaving the
+ *  list unrendered, so confirm the source link appeared and re-click Sources if it didn't. */
+async function openSource(page: Page, sourceName: string): Promise<void> {
+  const sourceLink = page.getByRole('link', { name: sourceName });
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const sources = page.getByRole('link', { name: 'Sources', exact: true });
+    await sources.waitFor({ state: 'visible', timeout: 30000 });
+    await sources.click();
+    await waitForLoadingToFinish(page);
+    const appeared = await sourceLink
+      .waitFor({ state: 'visible', timeout: 20000 })
+      .then(() => true)
+      .catch(() => false);
+    if (appeared) {
+      await sourceLink.click();
+      return;
+    }
+    console.log(`Sources list didn't render "${sourceName}" — retrying (${attempt}/3).`);
+  }
+  throw new Error(`Sources list never showed "${sourceName}" after 3 attempts.`);
+}
+
 test('Multi-account — sandbox evidence', async ({ page }) => {
   test.setTimeout(600_000);
   const sourceKeys = STAGE_KEYS.map(sourceKeyFor);
@@ -163,9 +187,10 @@ test('Multi-account — sandbox evidence', async ({ page }) => {
   await page.setViewportSize({ width: 1600, height: 2000 });
 
   await page.goto('https://rush-sb.identitynow.com/ui/d/mysailpoint');
-  await page.getByRole('link', { name: 'Admin' }).click();
-  await page.getByRole('link', { name: 'Sources', exact: true }).click();
-  await page.getByRole('link', { name: sourceNames[0] }).click();
+  const adminLink = page.getByRole('link', { name: 'Admin' });
+  await adminLink.waitFor({ state: 'visible', timeout: 30000 });
+  await adminLink.click();
+  await openSource(page, sourceNames[0]);
   await page.getByRole('link', { name: 'Accounts', exact: true }).click();
   await page.waitForSelector('[data-testid="search-bar-input"]', { timeout: 15000 });
   await page.getByTestId('search-bar-input').fill(STAGE_KEYS[0]);

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
+import * as net from 'net';
 import { spawn, execSync, type ChildProcess } from 'child_process';
 import { chromium, Browser, BrowserContext, Frame, Page } from '@playwright/test';
 
@@ -104,6 +105,48 @@ function findChromePath(): string {
     if (fs.existsSync(candidate)) return candidate;
   }
   throw new Error('Google Chrome was not found.');
+}
+
+/** True while something is listening on the port — an old Chrome that hasn't finished dying. */
+function portInUse(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: '127.0.0.1', port });
+    const done = (inUse: boolean) => {
+      socket.destroy();
+      resolve(inUse);
+    };
+    socket.setTimeout(1000);
+    socket.on('connect', () => done(true));
+    socket.on('error', () => done(false));
+    socket.on('timeout', () => done(false));
+  });
+}
+
+/**
+ * A CDP port nothing is using, scanned upward from the old hard-coded 9878.
+ *
+ * Every upload used to launch Chrome on 9878 flat. Kill the previous Chrome,
+ * relaunch immediately, and the port can still belong to the instance that is
+ * shutting down: connectOverCDP then attaches to a dying browser and the
+ * upload either hangs or dies with "Target page, context or browser has been
+ * closed". That alternation cost 6 of 9 uploads on 2026-11-16 — see AGENTS.md.
+ * A port of this call's own removes the collision; waitForPortFree covers the
+ * case where every candidate is momentarily busy.
+ */
+async function pickFreeCdpPort(): Promise<number> {
+  for (let port = 9878; port < 9878 + 40; port++) {
+    if (!(await portInUse(port))) return port;
+  }
+  throw new Error('No free CDP port in 9878-9917 for the SharePoint upload Chrome.');
+}
+
+async function waitForPortFree(port: number, timeoutMs = 20_000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (!(await portInUse(port))) return;
+    await sleep(300);
+  }
+  console.log(`SharePoint: port ${port} still busy after ${timeoutMs / 1000}s — launching anyway.`);
 }
 
 /** Polls the CDP /json/version endpoint until the remote-debugging port answers. */
@@ -530,6 +573,42 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
+/** True if the profile's SingletonLock entry exists at all. Chrome creates it as a symlink to a
+ *  non-existent "<host>-<pid>" target, so fs.existsSync() follows the link and always reports
+ *  false — lstat is the only way to see it. */
+function singletonLockPresent(lockPath: string): boolean {
+  try {
+    fs.lstatSync(lockPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** True while the Chrome that wrote SingletonLock is still running. The link target is
+ *  "<hostname>-<pid>"; an unreadable or unparseable target counts as stale. */
+function singletonLockOwnerAlive(lockPath: string): boolean {
+  try {
+    const target = fs.readlinkSync(lockPath);
+    const pid = Number(target.slice(target.lastIndexOf('-') + 1));
+    return Number.isInteger(pid) && pid > 0 && isPidAlive(pid);
+  } catch {
+    return false;
+  }
+}
+
+/** Drops the singleton files an interrupted Chrome left behind. Only safe once no live process
+ *  is using the profile — a running Chrome needs them. */
+function clearStaleSingletonFiles(profileDir: string): void {
+  for (const name of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+    try {
+      fs.rmSync(path.join(profileDir, name), { force: true });
+    } catch {
+      // nothing to drop
+    }
+  }
+}
+
 async function stopChromeUsingProfile(profileDir: string): Promise<void> {
   const pids = pidsUsingProfile(profileDir);
   for (const pid of pids) {
@@ -544,7 +623,16 @@ async function stopChromeUsingProfile(profileDir: string): Promise<void> {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
     const remaining = pidsUsingProfile(profileDir).filter(isPidAlive);
-    if (remaining.length === 0 && !fs.existsSync(lockPath)) return;
+    if (remaining.length === 0) {
+      if (!singletonLockPresent(lockPath)) return;
+      if (!singletonLockOwnerAlive(lockPath)) {
+        // An interrupted run (crash, Ctrl-C, killed test) leaves this behind. Chrome can refuse
+        // to start against it, which strands the caller with no CDP port and no error.
+        console.log('SharePoint: clearing a stale Chrome SingletonLock from an interrupted run.');
+        clearStaleSingletonFiles(profileDir);
+        return;
+      }
+    }
     await sleep(300);
   }
 
@@ -556,6 +644,15 @@ async function stopChromeUsingProfile(profileDir: string): Promise<void> {
     }
   }
   await sleep(500);
+
+  // Anything SIGKILLed cannot have cleaned up after itself.
+  if (
+    pidsUsingProfile(profileDir).filter(isPidAlive).length === 0 &&
+    singletonLockPresent(lockPath) &&
+    !singletonLockOwnerAlive(lockPath)
+  ) {
+    clearStaleSingletonFiles(profileDir);
+  }
 }
 
 function extractUrlsFromBuffer(buf: Buffer): string[] {
@@ -736,10 +833,12 @@ async function uploadAutomatically(
   subfolder?: string
 ): Promise<void> {
   fs.mkdirSync(UPLOAD_PROFILE_DIR, { recursive: true });
-  const cdpPort = 9878;
 
   console.log('SharePoint: opening upload session…');
   await stopChromeUsingProfile(UPLOAD_PROFILE_DIR);
+  // After the kill, not before: a port the dying Chrome still holds is
+  // exactly what must not be picked.
+  const cdpPort = await pickFreeCdpPort();
 
   if (!profileLooksSignedIntoSharePoint(UPLOAD_PROFILE_DIR)) {
     await ensureInteractiveSharePointLogin(folderUrl);
@@ -747,15 +846,17 @@ async function uploadAutomatically(
     console.log('SharePoint: reusing the saved Chrome sign-in.');
   }
 
-  const startUploadChrome = () =>
-    launchChrome([
+  const startUploadChrome = async () => {
+    await waitForPortFree(cdpPort);
+    return launchChrome([
       `--user-data-dir=${UPLOAD_PROFILE_DIR}`,
       `--remote-debugging-port=${cdpPort}`,
       ...CLEAN_CHROME_ARGS,
       folderUrl,
     ]);
+  };
 
-  startUploadChrome();
+  await startUploadChrome();
   let browser: Browser | undefined;
   try {
     await waitForCdpReady(cdpPort);
@@ -766,7 +867,7 @@ async function uploadAutomatically(
       );
       await stopChromeUsingProfile(UPLOAD_PROFILE_DIR);
       await ensureInteractiveSharePointLogin(folderUrl);
-      startUploadChrome();
+      await startUploadChrome();
       await waitForCdpReady(cdpPort);
       landedOnSharePoint = await waitForCdpAwayFromLogin(cdpPort, 20_000);
       if (!landedOnSharePoint) {
