@@ -237,13 +237,24 @@ export function resolveUploadFolderUrl(sourceName: string, lifecycle: LifecycleS
 }
 
 /** The user's table, re-printed with whatever Stage_Keys are known so far. */
-export function formatBatchTable(entries: BatchManifestEntry[]): string {
+/**
+ * Table of `rows` with each row's Stage_Key from `entries`.
+ *
+ * Defaults to ROWS_TO_CREATE — the list a run actually creates. It used to
+ * default to BATCH_ROWS, so a 9-row run printed all 16 of the 2026-11-06 rows
+ * with "(not created)" beside seven of them, which reads like seven failures.
+ * Pass BATCH_ROWS explicitly to render that batch.
+ */
+export function formatBatchTable(
+  entries: BatchManifestEntry[],
+  rows: BatchRow[] = ROWS_TO_CREATE
+): string {
   const byKey = new Map(entries.map((e) => [`${e.sourceKey}|${e.lifecycle}`, e]));
   const lines = [
     'S.No  Source                        Lifecycle    StageKey',
     '----  ----------------------------  -----------  ------------------------',
   ];
-  for (const row of BATCH_ROWS) {
+  for (const row of rows) {
     const entry = byKey.get(`${row.sourceKey}|${row.lifecycle}`);
     const stageKey = entry ? entry.stageKey + (entry.dbVerified ? '' : '  (NOT DB-VERIFIED)') : '(not created)';
     lines.push(
