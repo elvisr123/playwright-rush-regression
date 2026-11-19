@@ -31,8 +31,8 @@ import { findMultiAccountScenario } from '../../config/multiAccountScenarios';
 //   npx playwright test tests/sources/multi-account/document.spec.ts --headed
 
 // EDIT HERE: the scenario's No. (report is saved as Lifecycle_State_<No.>) and its two Stage_Keys.
-const S_NO = 50;
-const STAGE_KEYS = ['RL-9001179484829178ER', 'NE-9001179484829178ER'];
+const S_NO = 6;
+const STAGE_KEYS = ['RL-9001179459226312ER', 'CL-9001179459226312ER'];
 // Text after "Use Case:". Empty = the scenario's sources and lifecycles from the table.
 const USE_CASE = '';
 
