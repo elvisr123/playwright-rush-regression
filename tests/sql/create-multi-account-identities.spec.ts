@@ -76,7 +76,9 @@ const TABLE = 'My_Rush_Jobs';
 // futurehire, as in the scenario table — an unsupported pair fails with the
 // list of valid ones, and every pair is checked before anything is created.)
 const IDENTITIES_TO_CREATE: MultiAccountSide[][] = [
-  [{ sourceKey: 'rush', lifecycle: 'active' }, { sourceKey: 'copley', lifecycle: 'prehire' }],
+  // Requested 2026-11-19 — two identities, each with two accounts:
+  [{ sourceKey: 'nerm', lifecycle: 'active' }, { sourceKey: 'echo', lifecycle: 'active' }], // sNo 151
+  [{ sourceKey: 'copley', lifecycle: 'active' }, { sourceKey: 'rush', lifecycle: 'prehire' }], // sNo 6
 ];
 
 // Bulk modes — each ignores IDENTITIES_TO_CREATE. Resumable: scenarios
