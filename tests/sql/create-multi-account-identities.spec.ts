@@ -76,8 +76,10 @@ const TABLE = 'My_Rush_Jobs';
 // futurehire, as in the scenario table — an unsupported pair fails with the
 // list of valid ones, and every pair is checked before anything is created.)
 const IDENTITIES_TO_CREATE: MultiAccountSide[][] = [
-  // Requested 2026-11-19 — two identities, each with two accounts:
-  [{ sourceKey: 'nerm', lifecycle: 'active' }, { sourceKey: 'echo', lifecycle: 'active' }], // sNo 151
+  // One more of sNo 6, requested 2026-11-19. The first one
+  // (RL-9001179510713473ER / CL-9001179510713473ER) came up with no
+  // ServiceNow SaaS account, so this run makes a second, separate identity
+  // with the same pair — this mode never skips or reuses.
   [{ sourceKey: 'copley', lifecycle: 'active' }, { sourceKey: 'rush', lifecycle: 'prehire' }], // sNo 6
 ];
 
