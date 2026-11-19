@@ -418,6 +418,25 @@ User supplied a 205-row Source1×Lifecycle1 / Source2×Lifecycle2 table and aske
 - Both rows keep their template `Primary_Position="YES"` (no rule in the repo says otherwise for multi-account).
 - Verified offline: all 63 build rule-clean rows; `npx tsc --noEmit` clean; spec lists under `sql-tools`. **Not live-tested** — needs the VDI.
 
+## `Rush Email Generator` throws on Ellucian-authoritative identities (2026-11-19, open — tenant-side)
+
+Every two-account identity whose **auth source resolves to Ellucian Students** shows a red `Processing Error` banner in the sandbox and never gets a `ServiceNow SaaS` account:
+
+```
+java.lang.RuntimeException: org.apache.bsf.BSFException: The application script threw
+an exception: java.lang.StringIndexOutOfBoundsException: begin 0, end -1, length 0
+BSF info: Rush Email Generator at line: 0 column: columnNo
+```
+
+- **Not a bug in this repo, and not fixable here.** `grep -i guid identity-factory/*.py` returns nothing — no `AD_Guid` column is ever generated — and building a row shows **zero** empty-string values: every blank the generator writes is a real SQL `NULL`. Don't "fix" it by editing `source_templates.py`.
+- **The trigger is `AD GUID`, which renders as `''` (zero-length) on the Details tab while every other blank renders `--`.** `begin 0, end -1, length 0` is `substring(0, s.indexOf(…))` on `""`. SailPoint resolves AD GUID to an empty string while the identity has no `TEST RUSH AD` account, and `Rush Email Generator` reads it without an empty-guard. The throw aborts the refresh, so provisioning never runs — **the missing ServiceNow account is a symptom, not a separate problem**.
+- **Why Ellucian-authoritative**: in a futurehire/prehire + Ellucian-active pair, SailPoint picks the active (Ellucian) account as authoritative, under the *partner* source's Identity Profile. Seen under both Copley Lawson and ECHO Credentialed Providers, so it is not profile-specific.
+- **Do not fill in the Ellucian template's blanks to work around this.** `source_templates.py:248` — "Many fields are genuinely blank for this source in the real sample, not a gap — kept as None rather than guessed". Those 11 NULLs (`Title`, `Job_Code`, `Street_Address`, `Relationship_Status`, …) are what a real Ellucian Students row looks like; filling them would put invented data into evidence reports to mask a tenant defect.
+- **The fix belongs in the tenant**: an empty-guard in the `Rush Email Generator` rule, or an AD GUID transform returning null instead of `""`.
+- Repro set (2026-11-19): sNo 143 OmarRush C Chan `c7e8ec3cb4114823b45cb83d72055d82` / tracking `fe91b6effff3490d8f3ffa0d7fe299d7`; sNo 198 JulianRush W Washington `3594251a70084a90bbd7ee4ce8eca1b1` / `a26e338dcd7149aeb9b203c2d89a078c`; sNo 199 MatthewRush B Bergstrom `603bb571acbb4d189394509df847b630` / `5be87694d31a48b7ac43c868ed89d4a3`; HannahRush M Martinez `bbbed479aeb9419ea977f66ec03f3355` / `d45c73af465b4bfca69f9eadb9b5d331`.
+- HannahRush shows a **populated** AD GUID and Distinguished Name yet still carries the banner — her error is from the first refresh (created 1:53 PM, modified 1:54), when the GUID was still empty; the banner shows the last error and does not self-clear. The four created at 2:30 never got an AD account at all.
+- `MANAGER` resolving to `default.manager` instead of the template's `MaeveAA Yamamoto`/`259921` is **accepted, not a defect** (user, 2026-11-19: "default manager is fine") — don't chase it.
+
 ## Single-account creation list — `ROWS_TO_CREATE` (2026-11-17)
 
 `npm run batch:create` (`tests/sql/create-batch-identities.spec.ts`) now iterates **`ROWS_TO_CREATE`** in `tests/config/batch.ts`, a hand-edited list, instead of the historical 16-row `BATCH_ROWS`. `BATCH_ROWS` is unchanged and still backs `ROWS_TO_DOCUMENT` / `DOCUMENTED_BY_TEAMMATE` for the 2026-11-06 batch.
