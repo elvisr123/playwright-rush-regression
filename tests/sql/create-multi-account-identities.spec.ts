@@ -101,7 +101,7 @@ const CREATE_ALL_SCENARIOS = false;
 // false = fast: INSERT straight over the DB connection, no screenshots/report.
 // For a big bulk run (142 identities = 284 accounts) SSMS means many hours
 // and hundreds of query tabs — false is the practical choice there.
-const USE_SSMS = true;
+const USE_SSMS = false;
 // ---------------------------------------------------------------------------
 
 // Regenerations allowed per scenario on a name/Stage_Key/User_ID collision.
