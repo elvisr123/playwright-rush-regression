@@ -76,12 +76,13 @@ const TABLE = 'My_Rush_Jobs';
 // futurehire, as in the scenario table — an unsupported pair fails with the
 // list of valid ones, and every pair is checked before anything is created.)
 const IDENTITIES_TO_CREATE: MultiAccountSide[][] = [
-  // Requested 2026-11-19 as rows 144 / 198 / 199, each described as
-  // "futurehire + Ellucian active". Ellucian's lifecycle is listed as the
-  // table has it so the manifest records those three row numbers; createAs()
-  // writes termed and inactive as ACTIVE, so all three INSERT exactly the
-  // described identity. (Ellucian 'active' on all three would instead be
-  // rows 142 / 197 / 197 — the third a duplicate of the second.)
+  // Requested 2026-11-19: rows 143 / 144 / 198 / 199, Ellucian active on all
+  // four. Each Ellucian lifecycle is listed as the table has it so the
+  // manifest records the right row number; createAs() writes termed and
+  // inactive as ACTIVE, so every Ellucian account is created active as asked.
+  // Re-running this list makes four more new identities — this mode never
+  // skips or reuses.
+  [{ sourceKey: 'copley', lifecycle: 'futurehire' }, { sourceKey: 'ellucian', lifecycle: 'termed' }], // sNo 143
   [{ sourceKey: 'copley', lifecycle: 'futurehire' }, { sourceKey: 'ellucian', lifecycle: 'inactive' }], // sNo 144
   [{ sourceKey: 'echo', lifecycle: 'futurehire' }, { sourceKey: 'ellucian', lifecycle: 'termed' }], // sNo 198
   [{ sourceKey: 'echo', lifecycle: 'futurehire' }, { sourceKey: 'ellucian', lifecycle: 'inactive' }], // sNo 199
