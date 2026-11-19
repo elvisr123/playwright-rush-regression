@@ -76,10 +76,13 @@ const TABLE = 'My_Rush_Jobs';
 // futurehire, as in the scenario table — an unsupported pair fails with the
 // list of valid ones, and every pair is checked before anything is created.)
 const IDENTITIES_TO_CREATE: MultiAccountSide[][] = [
-  // One more of sNo 6, requested 2026-11-19. The first one
-  // (RL-9001179510713473ER / CL-9001179510713473ER) came up with no
-  // ServiceNow SaaS account, so this run makes a second, separate identity
-  // with the same pair — this mode never skips or reuses.
+  // Requested 2026-11-19. Created RL-/CL-9001179510713473ER (no ServiceNow
+  // SaaS account) and then RL-/CL-9001179511199005ER, which is being
+  // documented as sNo 10 — Rush prehire + Copley INACTIVE, whose Copley row
+  // is created active anyway (createAs) and flipped by hand. For another
+  // sNo 10, list copley 'inactive' instead so the manifest records row 10
+  // and the run ends with the lifecycle-change reminder; 'active' below is
+  // sNo 6. This mode never skips or reuses.
   [{ sourceKey: 'copley', lifecycle: 'active' }, { sourceKey: 'rush', lifecycle: 'prehire' }], // sNo 6
 ];
 
