@@ -76,11 +76,10 @@ const TABLE = 'My_Rush_Jobs';
 // futurehire, as in the scenario table — an unsupported pair fails with the
 // list of valid ones, and every pair is checked before anything is created.)
 const IDENTITIES_TO_CREATE: MultiAccountSide[][] = [
-  // Requested 2026-11-19 — one identity, Rush futurehire + Copley active.
-  // (Earlier the same day: two of sNo 6, RL-/CL-9001179510713473ER and
-  // RL-/CL-9001179511199005ER.) This mode never skips or reuses, so re-running
-  // makes another new identity rather than resuming.
-  [{ sourceKey: 'rush', lifecycle: 'futurehire' }, { sourceKey: 'copley', lifecycle: 'active' }], // sNo 11
+  // Requested 2026-11-19 — scenario 88. The Rush row is created ACTIVE
+  // (createAs) and flipped to inactive by hand afterwards; the run ends with
+  // the list of Stage_Keys needing that change.
+  [{ sourceKey: 'rush', lifecycle: 'inactive' }, { sourceKey: 'ellucian', lifecycle: 'active' }], // sNo 88
 ];
 
 // Bulk modes — each ignores IDENTITIES_TO_CREATE. Resumable: scenarios
