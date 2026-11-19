@@ -52,9 +52,10 @@ export const BATCH_ROWS: BatchRow[] = [
   { sNo: 16, sourceKey: 'ellucian', lifecycle: 'active' },
 ];
 
-// The identity to create next, requested 2026-11-17: one Non-Employee
-// Workforce prehire. (The previous contents — four sources at prehire, four
-// at active, plus Ellucian active — were created earlier the same day.)
+// The identities to create next, requested 2026-11-19: Non-Employee
+// Workforce active, ECHO active, Copley Lawson active and RUSH Lawson
+// prehire. (The previous contents — one Non-Employee Workforce prehire,
+// requested 2026-11-17 — were created already.)
 // This is what `npm run batch:create` actually creates —
 // BATCH_ROWS above stays as the 2026-11-06 table that ROWS_TO_DOCUMENT and
 // DOCUMENTED_BY_TEAMMATE are written against.
@@ -67,7 +68,10 @@ export const BATCH_ROWS: BatchRow[] = [
 // on the VDI holding the same pair must be moved aside first, or the row is
 // skipped as already-created and the run fails with that message. See AGENTS.md.
 export const ROWS_TO_CREATE: BatchRow[] = [
-  { sNo: 1, sourceKey: 'nerm', lifecycle: 'prehire' },
+  { sNo: 1, sourceKey: 'nerm', lifecycle: 'active' },
+  { sNo: 2, sourceKey: 'echo', lifecycle: 'active' },
+  { sNo: 3, sourceKey: 'copley', lifecycle: 'active' },
+  { sNo: 4, sourceKey: 'rush', lifecycle: 'prehire' },
 ];
 
 // Which rows `npm run batch:document` covers.
